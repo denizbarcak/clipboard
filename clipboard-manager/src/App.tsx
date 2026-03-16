@@ -94,6 +94,7 @@ function App() {
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const dragItemRef = useRef<ClipboardItem | null>(null);
   const dragOverRef = useRef<string | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const loadItems = useCallback(async () => {
     try {
@@ -215,6 +216,18 @@ function App() {
       setContextMenu(null);
       setEditing(null);
       setActiveCollection(null);
+      // Sürükleme listener'larını temizle
+      if (dragCleanupRef.current) {
+        dragCleanupRef.current();
+      } else {
+        setDraggingItem(null);
+        setDragOverCollection(null);
+        isDraggingRef.current = false;
+        dragItemRef.current = null;
+        dragOverRef.current = null;
+        removeGhost();
+        invoke("set_dragging", { dragging: false }).catch(() => {});
+      }
     });
     return () => {
       unlistenBlur.then((fn) => fn());
@@ -431,9 +444,20 @@ function App() {
       }
     };
 
-    const onMouseUp = async () => {
+    const cleanup = () => {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
+      removeGhost();
+      invoke("set_dragging", { dragging: false }).catch(() => {});
+      isDraggingRef.current = false;
+      dragItemRef.current = null;
+      dragOverRef.current = null;
+      dragCleanupRef.current = null;
+      setDraggingItem(null);
+      setDragOverCollection(null);
+    };
+
+    const onMouseUp = async () => {
       if (isDraggingRef.current && dragOverRef.current && dragItemRef.current) {
         try {
           await invoke("add_item_to_collection", {
@@ -450,15 +474,10 @@ function App() {
       } else if (!isDraggingRef.current) {
         handlePaste(item);
       }
-      removeGhost();
-      invoke("set_dragging", { dragging: false }).catch(() => {});
-      isDraggingRef.current = false;
-      dragItemRef.current = null;
-      dragOverRef.current = null;
-      setDraggingItem(null);
-      setDragOverCollection(null);
+      cleanup();
     };
 
+    dragCleanupRef.current = cleanup;
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   };
