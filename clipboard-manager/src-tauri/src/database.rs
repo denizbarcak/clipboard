@@ -214,19 +214,14 @@ impl Database {
 
             return Ok(items);
         } else {
-            // Tüm clipboard + koleksiyon öğelerinde ara
+            // Clipboard öğelerinde ara
             let mut stmt = conn.prepare(
                 "SELECT ci.id, ci.content, ci.item_type, ci.source_app, ci.preview, ci.is_pinned, ci.created_at, c.color
                  FROM clipboard_items ci
                  LEFT JOIN collection_items coi ON ci.id = coi.item_id
                  LEFT JOIN collections c ON coi.collection_id = c.id
                  WHERE ci.content LIKE ?1
-                 UNION
-                 SELECT coi.item_id, coi.content, coi.item_type, NULL, coi.preview, 0, coi.added_at, c2.color
-                 FROM collection_items coi
-                 JOIN collections c2 ON coi.collection_id = c2.id
-                 WHERE coi.content LIKE ?1 AND coi.item_id NOT IN (SELECT id FROM clipboard_items)
-                 ORDER BY created_at DESC
+                 ORDER BY ci.created_at DESC
                  LIMIT 50"
             ).map_err(|e| format!("Arama hazırlanamadı: {}", e))?;
 

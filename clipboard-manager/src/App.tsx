@@ -64,13 +64,22 @@ const COLLECTION_COLORS = [
   "#00cec9", // Turkuaz
   "#d63031", // Kırmızı
   "#636e72", // Gri
-  "#a29bfe", // Açık mor
 ];
 
 function App() {
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [activeCollection, setActiveCollection] = useState<string | null>(null);
+  const [activeCollection, setActiveCollectionRaw] = useState<string | null>(
+    () => localStorage.getItem("activeCollection")
+  );
+  const setActiveCollection = (id: string | null) => {
+    setActiveCollectionRaw(id);
+    if (id) {
+      localStorage.setItem("activeCollection", id);
+    } else {
+      localStorage.removeItem("activeCollection");
+    }
+  };
   const [dragOverCollection, setDragOverCollection] = useState<string | null>(null);
   const [draggingItem, setDraggingItem] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -217,7 +226,6 @@ function App() {
       setCardContextMenu(null);
       setContextMenu(null);
       setEditing(null);
-      setActiveCollection(null);
       // Sürükleme listener'larını temizle
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
@@ -544,7 +552,26 @@ function App() {
                 type="text"
                 placeholder="Ara..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const q = e.target.value;
+                  setSearchQuery(q);
+                  // Direkt arama yap
+                  if (q.trim()) {
+                    const args: Record<string, unknown> = { query: q };
+                    if (searchColorFilter) args.color = searchColorFilter;
+                    invoke<ClipboardItem[]>("search_all", args)
+                      .then((results) => { setItems(results); })
+                      .catch((err) => { console.error("Arama hatası:", err); });
+                  } else if (searchColorFilter) {
+                    invoke<ClipboardItem[]>("search_all", { query: "", color: searchColorFilter })
+                      .then((results) => { setItems(results); })
+                      .catch(console.error);
+                  } else {
+                    invoke<ClipboardItem[]>("get_clipboard_items", { limit: 20, offset: 0 })
+                      .then((results) => { setItems(results); })
+                      .catch(console.error);
+                  }
+                }}
                 autoFocus
               />
               <button
