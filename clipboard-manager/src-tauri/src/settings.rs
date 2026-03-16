@@ -5,12 +5,14 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub shortcut: String,
+    pub autostart: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             shortcut: "ctrl+alt+v".to_string(),
+            autostart: false,
         }
     }
 }
@@ -48,6 +50,14 @@ impl SettingsManager {
         {
             let mut s = self.settings.lock().map_err(|e| e.to_string())?;
             s.shortcut = shortcut.to_string();
+        }
+        self.save()
+    }
+
+    pub fn set_autostart(&self, enabled: bool) -> Result<(), String> {
+        {
+            let mut s = self.settings.lock().map_err(|e| e.to_string())?;
+            s.autostart = enabled;
         }
         self.save()
     }

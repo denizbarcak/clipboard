@@ -87,6 +87,7 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState("ctrl+alt+v");
+  const [autostart, setAutostart] = useState(false);
   const [capturingShortcut, setCapturingShortcut] = useState(false);
   const [capturedKeys, setCapturedKeys] = useState("");
   const cardsRef = useRef<HTMLDivElement>(null);
@@ -157,8 +158,9 @@ function App() {
 
   // Ayarları yükle
   useEffect(() => {
-    invoke<{ shortcut: string }>("get_settings").then((s) => {
+    invoke<{ shortcut: string; autostart: boolean }>("get_settings").then((s) => {
       setCurrentShortcut(s.shortcut);
+      setAutostart(s.autostart);
     }).catch(console.error);
   }, []);
 
@@ -748,6 +750,25 @@ function App() {
                   ))}
                 </button>
               )}
+            </div>
+            <div className="settings-row settings-row-inline">
+              <span className="settings-label">Bilgisayar açıldığında başlat</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={autostart}
+                  onChange={async (e) => {
+                    const enabled = e.target.checked;
+                    try {
+                      await invoke("toggle_autostart", { enabled });
+                      setAutostart(enabled);
+                    } catch (err) {
+                      console.error("Autostart hatası:", err);
+                    }
+                  }}
+                />
+                <span className="toggle-slider" />
+              </label>
             </div>
           </div>
         </div>

@@ -20,6 +20,7 @@ pub static IS_DRAGGING: AtomicBool = AtomicBool::new(false);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             // Logger (debug modda)
             if cfg!(debug_assertions) {
@@ -106,28 +107,79 @@ pub fn run() {
             commands::set_dragging,
             commands::get_settings,
             commands::update_shortcut,
+            commands::toggle_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("Uygulama başlatılırken hata oluştu");
 }
 
-/// Pencereyi ekranın altına yapıştır (tam genişlik, görev çubuğunu kapatır)
+/// Pencereyi cursor'un bulunduğu monitörün altına yapıştır
 fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
     use tauri::PhysicalPosition;
 
-    if let Ok(Some(monitor)) = window.primary_monitor() {
+    // Cursor hangi monitörde?
+    let cursor_pos = get_cursor_position();
+    let target_monitor = if let Ok(monitors) = window.available_monitors() {
+        monitors.into_iter().find(|m| {
+            let pos = m.position();
+            let size = m.size();
+            cursor_pos.0 >= pos.x
+                && cursor_pos.0 < pos.x + size.width as i32
+                && cursor_pos.1 >= pos.y
+                && cursor_pos.1 < pos.y + size.height as i32
+        })
+    } else {
+        None
+    };
+
+    // Bulunamazsa primary monitor'ü kullan
+    let monitor = target_monitor.or_else(|| window.primary_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
         let screen_size = monitor.size();
         let screen_pos = monitor.position();
 
         let panel_width = screen_size.width as i32;
-        let panel_height = 470i32;
+        // Küçük ekranlarda biraz daha yüksek, büyük ekranlarda daha düşük
+        let ratio = if screen_size.height <= 1080 { 0.22 }
+            else if screen_size.height <= 1920 { 0.25 }
+            else { 0.22 };
+        let panel_height = (screen_size.height as f64 * ratio) as i32;
 
         let x = screen_pos.x;
         let y = screen_pos.y + screen_size.height as i32 - panel_height;
 
+        // 1) Önce pencereyi hedef monitörün ortasına taşı (DPI geçişi için)
+        let _ = window.set_position(PhysicalPosition::new(
+            screen_pos.x + screen_size.width as i32 / 2,
+            screen_pos.y + screen_size.height as i32 / 2,
+        ));
+        // 2) Kısa bekle — DPI değişimi uygulansın
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // 3) Şimdi doğru boyut ve pozisyon
         let _ = window.set_size(tauri::PhysicalSize::new(panel_width as u32, panel_height as u32));
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
+}
+
+/// Windows API: Cursor pozisyonunu al
+fn get_cursor_position() -> (i32, i32) {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct POINT {
+            x: i32,
+            y: i32,
+        }
+        extern "system" {
+            fn GetCursorPos(point: *mut POINT) -> i32;
+        }
+        let mut point = POINT { x: 0, y: 0 };
+        unsafe { GetCursorPos(&mut point) };
+        return (point.x, point.y);
+    }
+    #[allow(unreachable_code)]
+    (0, 0)
 }
 
 /// Pencereyi göster/gizle toggle
@@ -138,7 +190,9 @@ fn toggle_window(app: &tauri::AppHandle) {
         } else {
             // Panel açılmadan önce aktif pencereyi kaydet
             save_previous_foreground_window();
+            let _ = window.hide();
             position_window_above_taskbar(&window);
+            std::thread::sleep(std::time::Duration::from_millis(10));
             let _ = window.show();
             let _ = window.set_focus();
             let _ = window.emit("window-shown", ());
@@ -304,7 +358,12 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let handle = app.handle().clone();
 
+    let icon = tauri::image::Image::from_path("icons/icon.png")
+        .or_else(|_| tauri::image::Image::from_path("icons/32x32.png"))
+        .unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
+
     TrayIconBuilder::new()
+        .icon(icon)
         .menu(&menu)
         .tooltip("Clipboard Manager")
         .on_menu_event(move |_app, event| match event.id().as_ref() {

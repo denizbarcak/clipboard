@@ -209,6 +209,26 @@ pub fn update_shortcut(
 }
 
 #[tauri::command]
+pub fn toggle_autostart(
+    app: tauri::AppHandle,
+    state: State<'_, SettingsState>,
+    enabled: bool,
+) -> Result<(), String> {
+    use tauri_plugin_autostart::AutoLaunchManager;
+    use tauri::Manager;
+
+    let autostart = app.state::<AutoLaunchManager>();
+    if enabled {
+        autostart.enable().map_err(|e| format!("Autostart etkinleştirilemedi: {}", e))?;
+    } else {
+        autostart.disable().map_err(|e| format!("Autostart devre dışı bırakılamadı: {}", e))?;
+    }
+    state.0.set_autostart(enabled)?;
+    log::info!("Autostart: {}", enabled);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_dragging(dragging: bool) {
     crate::IS_DRAGGING.store(dragging, std::sync::atomic::Ordering::SeqCst);
 }
