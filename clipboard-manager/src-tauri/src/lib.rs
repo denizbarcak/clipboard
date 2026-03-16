@@ -19,6 +19,13 @@ pub static IS_DRAGGING: AtomicBool = AtomicBool::new(false);
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // İkinci instance açılmaya çalışınca mevcut pencereyi göster
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
@@ -162,6 +169,40 @@ fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Windows API: Pencereyi en üste zorla (Start menüsünün bile üstüne)
+fn force_topmost(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        const HWND_TOPMOST: isize = -1;
+        const SWP_NOMOVE: u32 = 0x0002;
+        const SWP_NOSIZE: u32 = 0x0001;
+        const SWP_SHOWWINDOW: u32 = 0x0040;
+
+        extern "system" {
+            fn SetWindowPos(
+                hwnd: isize,
+                hwnd_insert_after: isize,
+                x: i32,
+                y: i32,
+                cx: i32,
+                cy: i32,
+                flags: u32,
+            ) -> i32;
+        }
+
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                SetWindowPos(
+                    hwnd.0 as isize,
+                    HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                );
+            }
+        }
+    }
+}
+
 /// Windows API: Cursor pozisyonunu al
 fn get_cursor_position() -> (i32, i32) {
     #[cfg(target_os = "windows")]
@@ -195,6 +236,15 @@ fn toggle_window(app: &tauri::AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(10));
             let _ = window.show();
             let _ = window.set_focus();
+            // Windows API ile en üste zorla
+            force_topmost(&window);
+            // Start menüsü kapanması için bekle ve tekrar üste zorla
+            let w = window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                force_topmost(&w);
+                let _ = w.set_focus();
+            });
             let _ = window.emit("window-shown", ());
         }
     }
