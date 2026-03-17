@@ -177,11 +177,18 @@ function App() {
   useEffect(() => {
     loadItems();
     loadCollections();
-    const unlisten = listen<ClipboardItem>("clipboard-changed", () => {
-      if (!activeCollection) loadItems();
-    });
-    return () => { unlisten.then((fn) => fn()); };
   }, [loadItems, loadCollections, activeCollection]);
+
+  useEffect(() => {
+    const unlistenRef = { current: false };
+    const unlisten = listen<ClipboardItem>("clipboard-changed", () => {
+      // Koleksiyon içindeyken clipboard değişikliklerini yoksay
+      if (unlistenRef.current) return;
+      loadItems();
+    });
+    if (activeCollection) unlistenRef.current = true;
+    return () => { unlisten.then((fn) => fn()); };
+  }, [activeCollection]);
 
   // Ayarları yükle
   useEffect(() => {
@@ -214,8 +221,6 @@ function App() {
       setCardContextMenu(null);
       setContextMenu(null);
       setEditing(null);
-      loadItems();
-      loadCollections();
       // Sürükleme listener'larını temizle
       if (dragCleanupRef.current) {
         dragCleanupRef.current();

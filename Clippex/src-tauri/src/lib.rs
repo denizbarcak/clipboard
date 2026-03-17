@@ -16,6 +16,7 @@ use tauri::{Emitter, Manager};
 static PREVIOUS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 /// Sürükleme sırasında pencere kapanmasını engelle
 pub static IS_DRAGGING: AtomicBool = AtomicBool::new(false);
+pub static IS_PASTING: AtomicBool = AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

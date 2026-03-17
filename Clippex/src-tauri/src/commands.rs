@@ -108,6 +108,7 @@ pub fn copy_to_clipboard(content: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn paste_to_previous_window(window: tauri::WebviewWindow, content: String) -> Result<(), String> {
+    crate::IS_PASTING.store(true, std::sync::atomic::Ordering::SeqCst);
     let mut clipboard =
         arboard::Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {}", e))?;
     clipboard
@@ -115,6 +116,11 @@ pub fn paste_to_previous_window(window: tauri::WebviewWindow, content: String) -
         .map_err(|e| format!("Clipboard'a yazılamadı: {}", e))?;
     let _ = window.hide();
     crate::restore_and_paste();
+    // 500ms sonra flag'i kaldır
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+        crate::IS_PASTING.store(false, std::sync::atomic::Ordering::SeqCst);
+    });
     Ok(())
 }
 

@@ -26,7 +26,7 @@ pub fn start_clipboard_watcher(app_handle: AppHandle, db: Arc<Database>) {
             // Metin kontrolü
             if let Ok(text) = clipboard.get_text() {
                 let text = text.trim().to_string();
-                if !text.is_empty() {
+                if !text.is_empty() && !text.starts_with("webview-panel\\") {
                     let is_new = match &last_text {
                         Some(last) => last != &text,
                         None => {
@@ -40,6 +40,8 @@ pub fn start_clipboard_watcher(app_handle: AppHandle, db: Arc<Database>) {
 
                     if is_new {
                         last_text = Some(text.clone());
+                    }
+                    if is_new && !crate::IS_PASTING.load(std::sync::atomic::Ordering::SeqCst) {
                         let item_type = detect_content_type(&text);
                         let preview = create_preview(&text, &item_type);
 
