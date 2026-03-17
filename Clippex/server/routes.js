@@ -78,17 +78,27 @@ router.get("/auth/me", authMiddleware, (req, res) => {
 // Register device
 router.post("/devices", authMiddleware, (req, res) => {
   const { device_name, device_type } = req.body;
+  const name = device_name || "Windows PC";
+  const type = device_type || "desktop";
+
+  // Aynı cihaz varsa mevcut kaydı döndür
+  const existing = db.prepare(
+    "SELECT * FROM devices WHERE user_id = ? AND device_name = ?"
+  ).get(req.user.id, name);
+
+  if (existing) {
+    db.prepare("UPDATE devices SET last_seen = datetime('now') WHERE id = ?").run(existing.id);
+    return res.status(200).json({
+      device: { id: existing.id, device_name: existing.device_name, device_type: existing.device_type },
+    });
+  }
 
   const result = db.prepare(
     "INSERT INTO devices (user_id, device_name, device_type) VALUES (?, ?, ?)"
-  ).run(req.user.id, device_name || "Windows PC", device_type || "desktop");
+  ).run(req.user.id, name, type);
 
   res.status(201).json({
-    device: {
-      id: result.lastInsertRowid,
-      device_name: device_name || "Windows PC",
-      device_type: device_type || "desktop",
-    },
+    device: { id: result.lastInsertRowid, device_name: name, device_type: type },
   });
 });
 
@@ -137,6 +147,12 @@ router.post("/sync", authMiddleware, (req, res) => {
       item_type: item_type || "text",
     },
   });
+});
+
+// Clear sync items (ana pano sıfırlama)
+router.delete("/sync", authMiddleware, (req, res) => {
+  db.prepare("DELETE FROM sync_items WHERE user_id = ?").run(req.user.id);
+  res.json({ message: "Sync items temizlendi" });
 });
 
 // Get sync items (from other devices)
@@ -269,6 +285,15 @@ router.post("/collections/local/:localId/items", authMiddleware, (req, res) => {
 
   if (!col) {
     return res.status(404).json({ error: "Koleksiyon bulunamadı" });
+  }
+
+  // Duplike kontrolü
+  const existing = db.prepare(
+    "SELECT id FROM collection_items WHERE collection_id = ? AND content = ?"
+  ).get(col.id, content);
+
+  if (existing) {
+    return res.status(200).json({ item: { id: existing.id } });
   }
 
   const result = db.prepare(

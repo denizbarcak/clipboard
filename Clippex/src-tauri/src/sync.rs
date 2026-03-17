@@ -137,12 +137,10 @@ impl SyncManager {
             }
             "add_to_collection" => {
                 let local_id = payload["local_id"].as_str().unwrap_or("");
-                // Find server collection by local_id, then add item
                 self.client
-                    .post(format!("{}/collections", state.api_url))
+                    .post(format!("{}/collections/local/{}/items", state.api_url, local_id))
                     .header("Authorization", &auth)
                     .json(&serde_json::json!({
-                        "local_id": local_id,
                         "content": payload["content"],
                         "item_type": payload["item_type"],
                     }))

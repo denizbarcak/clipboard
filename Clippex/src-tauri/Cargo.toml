@@ -1,7 +1,7 @@
 [package]
-name = "clipboard-manager"
-version = "0.1.0"
-description = "A visual clipboard manager for Windows"
+name = "clippex"
+version = "0.2.0"
+description = "Clippex - Cross-device clipboard manager for Windows"
 authors = ["deniz"]
 license = ""
 repository = ""

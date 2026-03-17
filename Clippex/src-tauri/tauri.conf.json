@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Clipboard Manager",
+        "title": "Clippex",
         "width": 800,
         "height": 320,
         "resizable": false,

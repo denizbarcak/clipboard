@@ -1,6 +1,6 @@
 {
-  "name": "clipboard-manager",
-  "version": "0.1.0",
+  "name": "clippex",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {

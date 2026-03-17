@@ -46,12 +46,18 @@ impl Database {
                 content TEXT NOT NULL,
                 item_type TEXT NOT NULL DEFAULT 'text',
                 preview TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
                 added_at TEXT NOT NULL,
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_collection_id ON collection_items(collection_id);",
         )
         .map_err(|e| format!("Tablo oluşturulamadı: {}", e))?;
+
+        // Migrations
+        let _ = conn.execute("ALTER TABLE collection_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN title TEXT", []);
+        let _ = conn.execute("ALTER TABLE collection_items ADD COLUMN title TEXT", []);
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -94,7 +100,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT ci.id, ci.content, ci.item_type, ci.source_app, ci.preview, ci.is_pinned, ci.created_at, c.color
+                "SELECT ci.id, ci.content, ci.item_type, ci.source_app, ci.preview, ci.is_pinned, ci.created_at, c.color, ci.title
                  FROM clipboard_items ci
                  LEFT JOIN collection_items coi ON ci.id = coi.item_id
                  LEFT JOIN collections c ON coi.collection_id = c.id
@@ -116,6 +122,7 @@ impl Database {
                     is_pinned: row.get::<_, i32>(5).unwrap_or(0) != 0,
                     created_at: row.get(6)?,
                     collection_color: row.get(7)?,
+                    title: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Sorgu çalıştırılamadı: {}", e))?
@@ -130,7 +137,7 @@ impl Database {
         let search = format!("%{}%", query);
         let mut stmt = conn
             .prepare(
-                "SELECT ci.id, ci.content, ci.item_type, ci.source_app, ci.preview, ci.is_pinned, ci.created_at, c.color
+                "SELECT ci.id, ci.content, ci.item_type, ci.source_app, ci.preview, ci.is_pinned, ci.created_at, c.color, ci.title
                  FROM clipboard_items ci
                  LEFT JOIN collection_items coi ON ci.id = coi.item_id
                  LEFT JOIN collections c ON coi.collection_id = c.id
@@ -153,6 +160,7 @@ impl Database {
                     is_pinned: row.get::<_, i32>(5).unwrap_or(0) != 0,
                     created_at: row.get(6)?,
                     collection_color: row.get(7)?,
+                    title: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Arama çalıştırılamadı: {}", e))?
@@ -182,6 +190,26 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_item_title(&self, id: &str, title: Option<&str>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_items SET title = ?1 WHERE id = ?2",
+            params![title, id],
+        )
+        .map_err(|e| format!("Başlık güncellenemedi: {}", e))?;
+        Ok(())
+    }
+
+    pub fn update_collection_item_title(&self, id: &str, title: Option<&str>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE collection_items SET title = ?1 WHERE item_id = ?2",
+            params![title, id],
+        )
+        .map_err(|e| format!("Koleksiyon başlığı güncellenemedi: {}", e))?;
+        Ok(())
+    }
+
     /// Hem clipboard hem koleksiyon öğelerinde arama, opsiyonel renk filtresi
     pub fn search_all(&self, query: &str, color: Option<&str>) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
@@ -207,6 +235,7 @@ impl Database {
                     is_pinned: false,
                     created_at: row.get(6)?,
                     collection_color: row.get(7)?,
+                    title: None,
                 })
             }).map_err(|e| format!("Arama çalıştırılamadı: {}", e))?
             .filter_map(|r| r.ok())
@@ -235,6 +264,7 @@ impl Database {
                     is_pinned: row.get::<_, i32>(5).unwrap_or(0) != 0,
                     created_at: row.get(6)?,
                     collection_color: row.get(7)?,
+                    title: None,
                 })
             }).map_err(|e| format!("Arama çalıştırılamadı: {}", e))?
             .filter_map(|r| r.ok())
@@ -366,10 +396,17 @@ impl Database {
         preview: Option<&str>,
     ) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let max_order: i32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM collection_items WHERE collection_id = ?1",
+                params![collection_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(-1);
         conn.execute(
-            "INSERT OR REPLACE INTO collection_items (collection_id, item_id, content, item_type, preview, added_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
-            params![collection_id, item_id, content, item_type, preview],
+            "INSERT OR REPLACE INTO collection_items (collection_id, item_id, content, item_type, preview, sort_order, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            params![collection_id, item_id, content, item_type, preview, max_order + 1],
         )
         .map_err(|e| format!("Koleksiyona eklenemedi: {}", e))?;
         Ok(())
@@ -379,11 +416,11 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT coi.item_id, coi.content, coi.item_type, coi.preview, coi.added_at, c.color
+                "SELECT coi.item_id, coi.content, coi.item_type, coi.preview, coi.added_at, c.color, coi.title
                  FROM collection_items coi
                  JOIN collections c ON coi.collection_id = c.id
                  WHERE coi.collection_id = ?1
-                 ORDER BY coi.added_at DESC",
+                 ORDER BY coi.sort_order ASC",
             )
             .map_err(|e| format!("Koleksiyon öğeleri sorgusu hazırlanamadı: {}", e))?;
 
@@ -400,6 +437,7 @@ impl Database {
                     is_pinned: false,
                     created_at: row.get(4)?,
                     collection_color: row.get(5)?,
+                    title: row.get(6)?,
                 })
             })
             .map_err(|e| format!("Koleksiyon öğeleri alınamadı: {}", e))?
@@ -419,6 +457,18 @@ impl Database {
             )
             .map_err(|e| format!("Sayım yapılamadı: {}", e))?;
         Ok(count)
+    }
+
+    pub fn reorder_collection_items(&self, collection_id: &str, item_ids: &[String]) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        for (i, item_id) in item_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE collection_items SET sort_order = ?1 WHERE item_id = ?2 AND collection_id = ?3",
+                params![i as i32, item_id, collection_id],
+            )
+            .map_err(|e| format!("Sıralama güncellenemedi: {}", e))?;
+        }
+        Ok(())
     }
 
     pub fn remove_from_collection(&self, item_id: &str) -> Result<(), String> {

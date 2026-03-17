@@ -64,43 +64,6 @@ pub fn run() {
             // Clipboard watcher başlat
             clipboard::start_clipboard_watcher(app.handle().clone(), db);
 
-            // Periyodik sync kontrolü (2 dakikada bir offline queue işle)
-            let sync_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(120));
-
-                    let sync = sync_handle.state::<sync::SyncManager>();
-                    if !sync.is_logged_in() {
-                        continue;
-                    }
-
-                    // Offline queue dosyasını oku ve işle
-                    let queue_dir = dirs::data_local_dir()
-                        .unwrap_or_default()
-                        .join("clippex");
-                    let queue_file = queue_dir.join("offline_queue.json");
-
-                    if let Ok(data) = std::fs::read_to_string(&queue_file) {
-                        if let Ok(queue) = serde_json::from_str::<Vec<serde_json::Value>>(&data) {
-                            if !queue.is_empty() {
-                                log::info!("Offline queue işleniyor: {} öğe", queue.len());
-                                let state = sync.get_state();
-
-                                for item in &queue {
-                                    let action = item["action"].as_str().unwrap_or("");
-                                    let payload = &item["payload"];
-                                    sync.send_or_queue(action, payload.clone());
-                                }
-
-                                // Queue'yu temizle
-                                let _ = std::fs::write(&queue_file, "[]");
-                            }
-                        }
-                    }
-                }
-            });
-
             // Pencereyi görev çubuğunun hemen üstüne konumlandır
             if let Some(window) = app.get_webview_window("main") {
                 position_window_above_taskbar(&window);
@@ -130,7 +93,7 @@ pub fn run() {
             let shortcut_str = settings.get().shortcut;
             setup_global_shortcut(app, &shortcut_str)?;
 
-            log::info!("Clipboard Manager başlatıldı");
+            log::info!("Clippex başlatıldı");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -152,6 +115,7 @@ pub fn run() {
             commands::add_item_to_collection,
             commands::get_collection_items,
             commands::remove_from_collection,
+            commands::reorder_collection_items,
             commands::update_collection_color,
             commands::set_dragging,
             commands::get_settings,
@@ -460,7 +424,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
-        .tooltip("Clipboard Manager")
+        .tooltip("Clippex")
         .on_menu_event(move |_app, event| match event.id().as_ref() {
             "show" => {
                 toggle_window(&handle);

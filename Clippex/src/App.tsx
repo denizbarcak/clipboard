@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -24,6 +24,7 @@ interface ClipboardItem {
   is_pinned: boolean;
   created_at: string;
   collection_color: string | null;
+  title: string | null;
 }
 
 interface Collection {
@@ -48,6 +49,7 @@ interface CardContextMenu {
 interface EditingItem {
   item: ClipboardItem;
   value: string;
+  title?: string;
 }
 
 interface DeleteConfirm {
@@ -83,6 +85,8 @@ function App() {
   };
   const [dragOverCollection, setDragOverCollection] = useState<string | null>(null);
   const [draggingItem, setDraggingItem] = useState<string | null>(null);
+  const [reorderDragIndex, setReorderDragIndex] = useState<number | null>(null);
+  const [reorderOverIndex, setReorderOverIndex] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -216,6 +220,8 @@ function App() {
       } else {
         setDraggingItem(null);
         setDragOverCollection(null);
+        setReorderDragIndex(null);
+        setReorderOverIndex(null);
         isDraggingRef.current = false;
         dragItemRef.current = null;
         dragOverRef.current = null;
@@ -264,6 +270,23 @@ function App() {
     };
   }, [activeCollection, contextMenu, cardContextMenu, renamingId, editing, isSearching]);
 
+  // Periyodik sync (2 dakikada bir)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem("clippex_token");
+      if (!token) return;
+      try {
+        await invoke("sync_login", {
+          token,
+          email: JSON.parse(localStorage.getItem("clippex_user") || "{}").email || "",
+        });
+      } catch (e) {
+        // sessizce atla
+      }
+    }, 120000); // 2 dakika
+    return () => clearInterval(interval);
+  }, []);
+
   const handlePaste = async (item: ClipboardItem) => {
     try {
       await invoke("paste_to_previous_window", { content: item.content });
@@ -276,7 +299,7 @@ function App() {
     e.stopPropagation();
     try {
       if (activeCollection) {
-        await invoke("remove_from_collection", { itemId: id, collectionId: activeCollection.id });
+        await invoke("remove_from_collection", { itemId: id, collectionId: activeCollection });
       } else {
         await invoke("delete_clipboard_item", { id });
       }
@@ -344,6 +367,7 @@ function App() {
       await invoke("update_collection_color", { id, color });
       setContextMenu(null);
       loadCollections();
+      loadItems();
     } catch (err) {
       console.error("Renk değiştirme hatası:", err);
     }
@@ -353,12 +377,14 @@ function App() {
   const handleSaveEdit = async () => {
     if (!editing) return;
     try {
+      const titleValue = editing.title?.trim() || null;
       await invoke("update_clipboard_content", {
         id: editing.item.id,
         content: editing.value,
+        title: titleValue,
         oldContent: editing.item.content,
         isCollectionItem: !!activeCollection,
-        collectionId: activeCollection?.id || null,
+        collectionId: activeCollection || null,
       });
       setEditing(null);
       loadItems();
@@ -408,6 +434,128 @@ function App() {
 
   const removeGhost = () => {
     if (ghostRef.current) { ghostRef.current.remove(); ghostRef.current = null; }
+  };
+
+  const handleReorderStart = (e: React.MouseEvent, index: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const item = items[index];
+    const card = e.currentTarget as HTMLElement;
+    let moved = false;
+    let dragStarted = false;
+    let targetCollectionId: string | null = null;
+
+    const activeCol = collections.find(c => c.id === activeCollection);
+    const colColor = activeCol?.color || "#6c5ce7";
+
+    const onMove = (me: MouseEvent) => {
+      if (!dragStarted && (Math.abs(me.clientX - startX) > 5 || Math.abs(me.clientY - startY) > 5)) {
+        dragStarted = true;
+        moved = true;
+        setReorderDragIndex(index);
+        invoke("set_dragging", { dragging: true });
+        // Ana panodaki ghost sistemini kullan
+        const ghost = document.createElement("div");
+        ghost.className = "drag-ghost";
+        ghost.style.background = `${colColor}d9`;
+        ghost.textContent = item.content.length > 40 ? item.content.slice(0, 40) + "..." : item.content;
+        ghost.style.left = me.clientX + "px";
+        ghost.style.top = me.clientY + "px";
+        document.body.appendChild(ghost);
+        ghostRef.current = ghost;
+      }
+      if (!dragStarted) return;
+
+      if (ghostRef.current) {
+        ghostRef.current.style.left = me.clientX + "px";
+        ghostRef.current.style.top = me.clientY + "px";
+      }
+
+      // Koleksiyon pill'leri üzerinde mi kontrol et
+      targetCollectionId = null;
+      const pills = document.querySelectorAll(".collection-pill");
+      pills.forEach((pill) => {
+        const rect = pill.getBoundingClientRect();
+        const cid = pill.getAttribute("data-collection-id");
+        if (cid && cid !== activeCollection && me.clientX >= rect.left && me.clientX <= rect.right && me.clientY >= rect.top && me.clientY <= rect.bottom) {
+          targetCollectionId = cid;
+          setDragOverCollection(cid);
+        }
+      });
+      if (!targetCollectionId) {
+        setDragOverCollection(null);
+        // Kartlar arasında pozisyon tespit et
+        const cards = cardsRef.current?.querySelectorAll(".clip-card");
+        if (cards) {
+          let insertIdx: number | null = null;
+          for (let i = 0; i < cards.length; i++) {
+            const rect = cards[i].getBoundingClientRect();
+            const mid = rect.left + rect.width / 2;
+            if (me.clientX < mid) {
+              insertIdx = i;
+              break;
+            }
+          }
+          if (insertIdx === null) insertIdx = cards.length;
+          setReorderOverIndex(insertIdx);
+        }
+      } else {
+        setReorderOverIndex(null);
+      }
+    };
+
+    const onUp = () => {
+      removeGhost();
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      invoke("set_dragging", { dragging: false });
+      setDragOverCollection(null);
+
+      if (!moved) {
+        setReorderDragIndex(null);
+        setReorderOverIndex(null);
+        handlePaste(item);
+        return;
+      }
+
+      if (targetCollectionId && activeCollection) {
+        // Farklı koleksiyona taşı
+        invoke("remove_from_collection", { itemId: item.id, collectionId: activeCollection }).catch(console.error);
+        invoke("add_item_to_collection", {
+          collectionId: targetCollectionId,
+          itemId: item.id + "-" + Date.now(),
+          content: item.content,
+          itemType: item.item_type,
+          preview: item.preview,
+        }).catch(console.error);
+        setItems(prev => prev.filter(i => i.id !== item.id));
+      } else {
+        // Aynı koleksiyonda sıralama değiştir
+        setReorderDragIndex((dragIdx) => {
+          setReorderOverIndex((overIdx) => {
+            if (dragIdx !== null && overIdx !== null && activeCollection) {
+              const insertAt = overIdx > dragIdx ? overIdx - 1 : overIdx;
+              if (insertAt === dragIdx) return null;
+              const newItems = [...items];
+              const [movedItem] = newItems.splice(dragIdx, 1);
+              newItems.splice(insertAt, 0, movedItem);
+              setItems(newItems);
+              const newOrder = newItems.map(i => i.id);
+              invoke("reorder_collection_items", { collectionId: activeCollection, itemIds: newOrder }).catch(console.error);
+            }
+            return null;
+          });
+          return null;
+        });
+      }
+      setReorderDragIndex(null);
+      setReorderOverIndex(null);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   };
 
   const handleCardMouseDown = (e: React.MouseEvent, item: ClipboardItem) => {
@@ -513,16 +661,6 @@ function App() {
     }}>
       {/* Collection Bar */}
       <div className="collection-bar">
-        {activeCollection && !isSearching && (
-          <button
-            className="collection-back-btn"
-            onClick={() => setActiveCollection(null)}
-            title="Panoya dön"
-          >
-            <ChevronLeftIcon />
-          </button>
-        )}
-
         {/* Arama ikonu / açık input */}
         {isSearching ? (
           <>
@@ -587,6 +725,14 @@ function App() {
               <SearchIcon />
             </button>
 
+            <div
+              className={`collection-pill pano-pill ${!activeCollection ? "active" : ""}`}
+              onClick={() => setActiveCollection(null)}
+            >
+              <span className="pill-dot" />
+              <span className="pill-name">Pano</span>
+            </div>
+
             {collections.map((col) => (
               <div
                 key={col.id}
@@ -644,6 +790,29 @@ function App() {
         )}
 
         {/* Sağ köşe: 3 nokta ayar */}
+        {!activeCollection && (
+          <button
+            className="clear-history-btn"
+            onClick={async (e) => {
+              e.stopPropagation();
+              await invoke("clear_clipboard_history");
+              loadItems();
+              // Giriş yapılmışsa sunucuyu da güncelle (boş pano gönder)
+              const token = localStorage.getItem("clippex_token");
+              if (token) {
+                try {
+                  await invoke("sync_login", {
+                    token,
+                    email: JSON.parse(localStorage.getItem("clippex_user") || "{}").email || "",
+                  });
+                } catch (_) {}
+              }
+            }}
+            title="Panoyu sıfırla"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          </button>
+        )}
         <button
           className="settings-trigger"
           onClick={(e) => { e.stopPropagation(); openSettingsWindow(); }}
@@ -675,17 +844,21 @@ function App() {
             }
           }}
         >
-          {items.map((item) => {
+          {items.map((item, idx) => {
             const cardColor = activeCollection
               ? collections.find(c => c.id === activeCollection)?.color
               : item.collection_color;
+            const isReorderDragging = reorderDragIndex === idx;
+            const showDropBefore = activeCollection && reorderDragIndex !== null && reorderOverIndex === idx && reorderDragIndex !== idx;
+            const dropColor = collections.find(c => c.id === activeCollection)?.color || "#6c5ce7";
             return (
+            <React.Fragment key={item.id}>
+            {showDropBefore && <div className="drop-indicator" style={{ "--drop-color": dropColor } as React.CSSProperties} />}
             <div
-              key={item.id}
-              className={`clip-card ${draggingItem === item.id ? "dragging" : ""} ${cardColor ? "in-collection" : ""}`}
+              className={`clip-card ${draggingItem === item.id ? "dragging" : ""} ${cardColor ? "in-collection" : ""} ${isReorderDragging ? "reorder-dragging" : ""}`}
               style={cardColor ? { "--collection-color": cardColor } as React.CSSProperties : undefined}
-              onMouseDown={!activeCollection ? (e) => handleCardMouseDown(e, item) : undefined}
-              onClick={activeCollection ? () => handlePaste(item) : undefined}
+              onMouseDown={!activeCollection ? (e) => handleCardMouseDown(e, item) : (e) => handleReorderStart(e, items.indexOf(item))}
+              onClick={undefined}
               onContextMenu={(e) => handleCardContextMenu(e, item)}
             >
               <div className="card-content">
@@ -700,8 +873,11 @@ function App() {
               <div className="card-footer">
                 <div className="card-meta">
                   <span className="card-type-badge">
-                    <TypeIcon type={item.item_type} />
-                    {typeLabel(item.item_type)}
+                    {item.title ? (
+                      <><span className="title-dot" />{item.title}</>
+                    ) : (
+                      <><TypeIcon type={item.item_type} />{typeLabel(item.item_type)}</>
+                    )}
                   </span>
                   <span className="card-time">{item.content.length} karakter</span>
                 </div>
@@ -709,6 +885,7 @@ function App() {
                   <div className="card-actions" style={{ opacity: 1 }}>
                     <button
                       className="card-action-btn delete"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => handleDelete(e, item.id)}
                       title="Koleksiyondan çıkar"
                     >
@@ -718,8 +895,12 @@ function App() {
                 )}
               </div>
             </div>
+            </React.Fragment>
           );
           })}
+          {activeCollection && reorderDragIndex !== null && reorderOverIndex === items.length && (
+            <div className="drop-indicator" style={{ "--drop-color": collections.find(c => c.id === activeCollection)?.color || "#6c5ce7" } as React.CSSProperties} />
+          )}
         </div>
       )}
 
@@ -739,7 +920,7 @@ function App() {
             <button
               className="ctx-item"
               onClick={() => {
-                setEditing({ item: cardContextMenu.item, value: cardContextMenu.item.content });
+                setEditing({ item: cardContextMenu.item, value: cardContextMenu.item.content, title: cardContextMenu.item.title || "" });
                 setCardContextMenu(null);
               }}
             >
@@ -820,6 +1001,17 @@ function App() {
               <button className="edit-btn save" onClick={handleSaveEdit}>
                 Kaydet
               </button>
+            </div>
+            <div className="edit-title-row">
+              <label className="edit-label">Başlık</label>
+              <input
+                className="edit-title-input"
+                type="text"
+                placeholder="Opsiyonel (maks 10)"
+                maxLength={10}
+                value={editing.title || ""}
+                onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+              />
             </div>
             <textarea
               className="edit-textarea"

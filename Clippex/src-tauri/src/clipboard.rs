@@ -52,6 +52,7 @@ pub fn start_clipboard_watcher(app_handle: AppHandle, db: Arc<Database>) {
                             is_pinned: false,
                             created_at: Utc::now().to_rfc3339(),
                             collection_color: None,
+                            title: None,
                         };
 
                         if let Err(e) = db.insert_item(&item) {

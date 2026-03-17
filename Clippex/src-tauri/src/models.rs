@@ -40,6 +40,7 @@ pub struct ClipboardItem {
     pub is_pinned: bool,
     pub created_at: String,
     pub collection_color: Option<String>,
+    pub title: Option<String>,
 }
 
 /// Koleksiyon (dosyalama)

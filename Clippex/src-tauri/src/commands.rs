@@ -32,14 +32,17 @@ pub fn update_clipboard_content(
     sync: State<'_, crate::sync::SyncManager>,
     id: String,
     content: String,
+    title: Option<String>,
     old_content: Option<String>,
     is_collection_item: bool,
     collection_id: Option<String>,
 ) -> Result<(), String> {
     let result = if is_collection_item {
-        state.0.update_collection_item_content(&id, &content)
+        state.0.update_collection_item_content(&id, &content)?;
+        state.0.update_collection_item_title(&id, title.as_deref())
     } else {
-        state.0.update_item_content(&id, &content)
+        state.0.update_item_content(&id, &content)?;
+        state.0.update_item_title(&id, title.as_deref())
     };
 
     if result.is_ok() {
@@ -305,6 +308,15 @@ pub fn remove_from_collection(
         }
     }
     state.0.remove_from_collection(&item_id)
+}
+
+#[tauri::command]
+pub fn reorder_collection_items(
+    state: State<'_, DbState>,
+    collection_id: String,
+    item_ids: Vec<String>,
+) -> Result<(), String> {
+    state.0.reorder_collection_items(&collection_id, &item_ids)
 }
 
 // ===== SYNC COMMANDS =====

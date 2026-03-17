@@ -108,6 +108,10 @@ html, body, #root {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
+.collection-pill.pano-pill {
+  --pill-color: var(--text-secondary);
+}
+
 .collection-pill.active {
   background: var(--pill-color, var(--accent));
   border-color: var(--pill-color, var(--accent));
@@ -512,6 +516,33 @@ html, body, #root {
 }
 
 /* ===== Settings ===== */
+.clear-history-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+  position: absolute;
+  right: 40px;
+  transition: all 0.15s ease;
+}
+
+.clear-history-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.clear-history-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .settings-trigger {
   display: flex;
   align-items: center;
@@ -833,6 +864,40 @@ html, body, #root {
   background: rgba(108, 92, 231, 0.3);
 }
 
+.edit-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.edit-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.edit-title-input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+.edit-title-input:focus {
+  border-color: var(--accent);
+}
+
+.edit-title-input::placeholder {
+  color: var(--text-tertiary);
+}
+
 .edit-textarea {
   flex: 1;
   padding: 14px;
@@ -867,6 +932,27 @@ html, body, #root {
   opacity: 0.35;
   transform: scale(0.95);
   border-color: var(--accent);
+}
+
+.clip-card.reorder-dragging {
+  opacity: 0.3;
+}
+
+.drop-indicator {
+  width: 3px;
+  min-height: 80%;
+  align-self: center;
+  border-radius: 3px;
+  background: var(--drop-color, var(--accent));
+  box-shadow: 0 0 8px var(--drop-color, var(--accent));
+  flex-shrink: 0;
+  margin: 0 -2px;
+  animation: drop-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes drop-pulse {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 /* Ghost element — follows cursor during drag */
@@ -1023,6 +1109,16 @@ html, body, #root {
   width: 12px;
   height: 12px;
   opacity: 0.7;
+}
+
+.title-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 
 .card-time {
