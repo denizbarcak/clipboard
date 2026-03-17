@@ -29,15 +29,27 @@ pub fn search_clipboard(
 #[tauri::command]
 pub fn update_clipboard_content(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     id: String,
     content: String,
     is_collection_item: bool,
 ) -> Result<(), String> {
-    if is_collection_item {
+    let result = if is_collection_item {
         state.0.update_collection_item_content(&id, &content)
     } else {
         state.0.update_item_content(&id, &content)
+    };
+
+    // Sync: düzenlemeyi sunucuya bildir (full sync ile güncellenecek)
+    if result.is_ok() {
+        sync.send_or_queue("edit_item", serde_json::json!({
+            "id": id,
+            "content": content,
+            "is_collection_item": is_collection_item,
+        }));
     }
+
+    result
 }
 
 #[tauri::command]
@@ -96,16 +108,24 @@ pub fn paste_to_previous_window(window: tauri::WebviewWindow, content: String) -
 #[tauri::command]
 pub fn create_collection(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     name: String,
     color: Option<String>,
 ) -> Result<Collection, String> {
     let collection = Collection {
         id: uuid::Uuid::new_v4().to_string(),
-        name,
-        color: color.unwrap_or_else(|| "#6c5ce7".to_string()),
+        name: name.clone(),
+        color: color.clone().unwrap_or_else(|| "#6c5ce7".to_string()),
         created_at: chrono::Utc::now().to_rfc3339(),
     };
     state.0.create_collection(&collection)?;
+
+    sync.send_or_queue("create_collection", serde_json::json!({
+        "local_id": collection.id,
+        "name": collection.name,
+        "color": collection.color,
+    }));
+
     Ok(collection)
 }
 
@@ -115,26 +135,38 @@ pub fn get_collections(state: State<'_, DbState>) -> Result<Vec<Collection>, Str
 }
 
 #[tauri::command]
-pub fn delete_collection(state: State<'_, DbState>, id: String) -> Result<(), String> {
-    state.0.delete_collection(&id)
+pub fn delete_collection(
+    state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
+    id: String,
+) -> Result<(), String> {
+    state.0.delete_collection(&id)?;
+    sync.send_or_queue("delete_collection", serde_json::json!({ "local_id": id }));
+    Ok(())
 }
 
 #[tauri::command]
 pub fn rename_collection(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     id: String,
     name: String,
 ) -> Result<(), String> {
-    state.0.rename_collection(&id, &name)
+    state.0.rename_collection(&id, &name)?;
+    sync.send_or_queue("rename_collection", serde_json::json!({ "local_id": id, "name": name }));
+    Ok(())
 }
 
 #[tauri::command]
 pub fn update_collection_color(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     id: String,
     color: String,
 ) -> Result<(), String> {
-    state.0.update_collection_color(&id, &color)
+    state.0.update_collection_color(&id, &color)?;
+    sync.send_or_queue("update_color", serde_json::json!({ "local_id": id, "color": color }));
+    Ok(())
 }
 
 #[tauri::command]
@@ -148,6 +180,7 @@ pub fn get_collection_item_count(
 #[tauri::command]
 pub fn add_item_to_collection(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     collection_id: String,
     item_id: String,
     content: String,
@@ -160,7 +193,15 @@ pub fn add_item_to_collection(
         &content,
         &item_type,
         preview.as_deref(),
-    )
+    )?;
+
+    sync.send_or_queue("add_to_collection", serde_json::json!({
+        "local_id": collection_id,
+        "content": content,
+        "item_type": item_type,
+    }));
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -236,7 +277,112 @@ pub fn set_dragging(dragging: bool) {
 #[tauri::command]
 pub fn remove_from_collection(
     state: State<'_, DbState>,
+    sync: State<'_, crate::sync::SyncManager>,
     item_id: String,
+    collection_id: Option<String>,
 ) -> Result<(), String> {
+    // Öğenin içeriğini al (sunucuya göndermek için)
+    if let Some(ref col_id) = collection_id {
+        if let Ok(items) = state.0.get_collection_items(col_id) {
+            if let Some(item) = items.iter().find(|i| i.id == item_id) {
+                sync.send_or_queue("remove_from_collection", serde_json::json!({
+                    "local_id": col_id,
+                    "content": item.content,
+                }));
+            }
+        }
+    }
     state.0.remove_from_collection(&item_id)
+}
+
+// ===== SYNC COMMANDS =====
+
+#[tauri::command]
+pub async fn sync_login(
+    sync: State<'_, crate::sync::SyncManager>,
+    db: State<'_, DbState>,
+    token: String,
+    email: String,
+) -> Result<String, String> {
+    sync.set_auth(token.clone(), email.clone(), None);
+
+    // Register device
+    let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
+    match sync.register_device(&hostname).await {
+        Ok(device_id) => {
+            log::info!("Sync giriş yapıldı: {} (device: {})", email, device_id);
+        }
+        Err(e) => {
+            log::warn!("Device kaydedilemedi: {}", e);
+        }
+    }
+
+    let state = sync.get_state();
+    let client = reqwest::Client::new();
+    let auth_header = format!("Bearer {}", state.token.clone().unwrap_or_default());
+    let device_id = state.device_id.unwrap_or(0);
+
+    // Full sync: ana pano + koleksiyonlar tek seferde
+    let clipboard_items = db.0.get_items(20, 0).unwrap_or_default();
+    let items_data: Vec<serde_json::Value> = clipboard_items.iter().map(|item| {
+        serde_json::json!({
+            "content": item.content,
+            "item_type": format!("{:?}", item.item_type).to_lowercase(),
+        })
+    }).collect();
+
+    let collections = db.0.get_collections().unwrap_or_default();
+    let collections_data: Vec<serde_json::Value> = collections.iter().map(|col| {
+        let items = db.0.get_collection_items(&col.id).unwrap_or_default();
+        let item_data: Vec<serde_json::Value> = items.iter().map(|item| {
+            serde_json::json!({
+                "content": item.content,
+                "item_type": format!("{:?}", item.item_type).to_lowercase(),
+            })
+        }).collect();
+
+        serde_json::json!({
+            "id": col.id,
+            "name": col.name,
+            "color": col.color,
+            "items": item_data,
+        })
+    }).collect();
+
+    let body = serde_json::json!({
+        "clipboard_items": items_data,
+        "collections": collections_data,
+        "device_id": device_id,
+    });
+
+    match client
+        .post(format!("{}/sync/full", state.api_url))
+        .header("Authorization", &auth_header)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(res) => {
+            if res.status().is_success() {
+                log::info!("Full sync tamamlandı: {} kart, {} koleksiyon", items_data.len(), collections_data.len());
+            } else {
+                log::warn!("Full sync başarısız: {}", res.status());
+            }
+        }
+        Err(e) => log::warn!("Full sync hatası: {}", e),
+    }
+
+    Ok("Giriş yapıldı, veriler senkronize edildi".to_string())
+}
+
+#[tauri::command]
+pub fn sync_logout(sync: State<'_, crate::sync::SyncManager>) -> Result<(), String> {
+    sync.clear_auth();
+    log::info!("Sync çıkış yapıldı");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sync_status(sync: State<'_, crate::sync::SyncManager>) -> Result<bool, String> {
+    Ok(sync.is_logged_in())
 }

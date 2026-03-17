@@ -1138,3 +1138,255 @@ html, body, #root {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ===== Settings Window ===== */
+.settings-window {
+  display: flex;
+  height: 100vh;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+.settings-sidebar {
+  width: 130px;
+  background: #12122a;
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-logo {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  padding: 0 12px 20px;
+  letter-spacing: -0.02em;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.settings-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.settings-tab.active {
+  background: rgba(108, 92, 231, 0.15);
+  color: #a29bfe;
+}
+
+.settings-content {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
+}
+
+.settings-panel h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  color: #fff;
+}
+
+.setting-group {
+  margin-bottom: 20px;
+}
+
+.setting-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.shortcut-input {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.shortcut-input:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.shortcut-input.recording {
+  border-color: #6c5ce7;
+  box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.3);
+  color: #a29bfe;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toggle-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  padding: 0;
+}
+
+.toggle.on {
+  background: #6c5ce7;
+}
+
+.toggle-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.2s;
+}
+
+.toggle.on .toggle-thumb {
+  transform: translateX(20px);
+}
+
+.save-btn {
+  margin-top: 24px;
+  padding: 10px 24px;
+  background: #6c5ce7;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.save-btn:hover:not(.disabled) {
+  background: #5a4bd1;
+}
+
+.save-btn.disabled {
+  background: rgba(108, 92, 231, 0.3);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.save-btn.saved {
+  background: #00b894;
+  opacity: 1;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.settings-input:focus {
+  border-color: #6c5ce7;
+  box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.2);
+}
+
+.settings-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.auth-error {
+  color: #ff7675;
+  font-size: 13px;
+  margin-top: -8px;
+  margin-bottom: 12px;
+}
+
+.switch-auth {
+  margin-top: 12px;
+  background: none;
+  border: none;
+  color: #a29bfe;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  padding: 8px;
+}
+
+.switch-auth:hover {
+  text-decoration: underline;
+}
+
+.logout-btn {
+  padding: 8px 20px;
+  background: rgba(255, 118, 117, 0.15);
+  border: 1px solid rgba(255, 118, 117, 0.3);
+  border-radius: 8px;
+  color: #ff7675;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+.logout-btn:hover {
+  background: rgba(255, 118, 117, 0.25);
+}
+
+.sync-info {
+  margin-top: 30px;
+  padding: 16px;
+  background: rgba(108, 92, 231, 0.08);
+  border: 1px solid rgba(108, 92, 231, 0.15);
+  border-radius: 10px;
+}
+
+.sync-info h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #a29bfe;
+  margin-bottom: 8px;
+}
+
+.sync-info p {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.6;
+}

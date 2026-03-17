@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ClipboardIcon,
   TextIcon,
@@ -94,17 +95,30 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchColorFilter, setSearchColorFilter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState("ctrl+alt+v");
-  const [autostart, setAutostart] = useState(false);
-  const [capturingShortcut, setCapturingShortcut] = useState(false);
-  const [capturedKeys, setCapturedKeys] = useState("");
   const cardsRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const dragItemRef = useRef<ClipboardItem | null>(null);
   const dragOverRef = useRef<string | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  const openSettingsWindow = async () => {
+    const existing = await WebviewWindow.getByLabel("settings");
+    if (existing) {
+      await existing.show();
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow("settings", {
+      url: "index.html",
+      title: "Clippex Ayarlar",
+      width: 500,
+      height: 600,
+      resizable: false,
+      center: true,
+    });
+  };
 
   const loadItems = useCallback(async () => {
     try {
@@ -167,40 +181,10 @@ function App() {
 
   // Ayarları yükle
   useEffect(() => {
-    invoke<{ shortcut: string; autostart: boolean }>("get_settings").then((s) => {
+    invoke<{ shortcut: string }>("get_settings").then((s) => {
       setCurrentShortcut(s.shortcut);
-      setAutostart(s.autostart);
     }).catch(console.error);
   }, []);
-
-  // Kısayol yakalama
-  const handleShortcutCapture = (e: React.KeyboardEvent) => {
-    e.preventDefault();
-    const parts: string[] = [];
-    if (e.ctrlKey) parts.push("ctrl");
-    if (e.altKey) parts.push("alt");
-    if (e.shiftKey) parts.push("shift");
-
-    const key = e.key.toLowerCase();
-    if (!["control", "alt", "shift", "meta"].includes(key)) {
-      parts.push(key);
-      const shortcut = parts.join("+");
-      setCapturedKeys(shortcut);
-    }
-  };
-
-  const saveShortcut = async () => {
-    const shortcutToSave = capturedKeys || currentShortcut;
-    try {
-      await invoke("update_shortcut", { shortcut: shortcutToSave });
-      setCurrentShortcut(shortcutToSave);
-      setCapturedKeys("");
-      setCapturingShortcut(false);
-      setShowSettings(false);
-    } catch (err) {
-      console.error("Kısayol kaydedilemedi:", err);
-    }
-  };
 
   // Tüm native context menu'yu engelle
   useEffect(() => {
@@ -249,11 +233,7 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (showSettings) {
-          setShowSettings(false);
-          setCapturingShortcut(false);
-          setCapturedKeys("");
-        } else if (editing) {
+        if (editing) {
           setEditing(null);
         } else if (cardContextMenu) {
           setCardContextMenu(null);
@@ -282,7 +262,7 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("click", handleClick);
     };
-  }, [activeCollection, contextMenu, cardContextMenu, renamingId, editing, isSearching, showSettings]);
+  }, [activeCollection, contextMenu, cardContextMenu, renamingId, editing, isSearching]);
 
   const handlePaste = async (item: ClipboardItem) => {
     try {
@@ -296,7 +276,7 @@ function App() {
     e.stopPropagation();
     try {
       if (activeCollection) {
-        await invoke("remove_from_collection", { itemId: id });
+        await invoke("remove_from_collection", { itemId: id, collectionId: activeCollection.id });
       } else {
         await invoke("delete_clipboard_item", { id });
       }
@@ -664,7 +644,7 @@ function App() {
         {/* Sağ köşe: 3 nokta ayar */}
         <button
           className="settings-trigger"
-          onClick={(e) => { e.stopPropagation(); setShowSettings(true); }}
+          onClick={(e) => { e.stopPropagation(); openSettingsWindow(); }}
           title="Ayarlar"
         >
           <MoreIcon />
@@ -741,65 +721,7 @@ function App() {
         </div>
       )}
 
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="edit-overlay" onClick={() => { setShowSettings(false); setCapturingShortcut(false); setCapturedKeys(""); }}>
-          <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="settings-header">
-              <span className="settings-title">Ayarlar</span>
-              <button className="search-close" onClick={() => { setShowSettings(false); setCapturingShortcut(false); setCapturedKeys(""); }}>×</button>
-            </div>
-            <div className="settings-row">
-              <span className="settings-label">Kısayol Tuşu</span>
-              {capturingShortcut ? (
-                <div className="shortcut-capture">
-                  <input
-                    className="shortcut-input capturing"
-                    value={capturedKeys || "Bir tuş kombinasyonu basın..."}
-                    onKeyDown={handleShortcutCapture}
-                    readOnly
-                    autoFocus
-                  />
-                  <button className="edit-btn save" onClick={saveShortcut} disabled={!capturedKeys}>
-                    Kaydet
-                  </button>
-                  <button className="edit-btn cancel" onClick={() => { setCapturingShortcut(false); setCapturedKeys(""); }}>
-                    İptal
-                  </button>
-                </div>
-              ) : (
-                <button className="shortcut-display" onClick={() => setCapturingShortcut(true)}>
-                  {currentShortcut.split("+").map((k, i) => (
-                    <span key={i}>
-                      {i > 0 && <span className="shortcut-sep">+</span>}
-                      <span className="shortcut-key">{k.charAt(0).toUpperCase() + k.slice(1)}</span>
-                    </span>
-                  ))}
-                </button>
-              )}
-            </div>
-            <div className="settings-row settings-row-inline">
-              <span className="settings-label">Bilgisayar açıldığında başlat</span>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={autostart}
-                  onChange={async (e) => {
-                    const enabled = e.target.checked;
-                    try {
-                      await invoke("toggle_autostart", { enabled });
-                      setAutostart(enabled);
-                    } catch (err) {
-                      console.error("Autostart hatası:", err);
-                    }
-                  }}
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Settings artık ayrı pencerede açılıyor */}
 
       {/* Card Context Menu */}
       {cardContextMenu && (

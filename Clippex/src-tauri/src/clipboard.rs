@@ -4,7 +4,7 @@ use arboard::Clipboard;
 use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 /// Clipboard'ı arka planda izle ve değişiklikleri yakala
@@ -60,6 +60,39 @@ pub fn start_clipboard_watcher(app_handle: AppHandle, db: Arc<Database>) {
                             // Frontend'e bildir
                             let _ = app_handle.emit("clipboard-changed", &item);
                             log::info!("Yeni clipboard öğesi kaydedildi: {}", item.id);
+
+                            // Sync: sunucuya gönder (async, bloklamaz)
+                            let sync = app_handle.state::<crate::sync::SyncManager>();
+                            if sync.is_logged_in() {
+                                let content = item.content.clone();
+                                let item_type = format!("{:?}", item.item_type).to_lowercase();
+                                let state = sync.get_state();
+                                std::thread::spawn(move || {
+                                    let rt = tokio::runtime::Builder::new_current_thread()
+                                        .enable_all()
+                                        .build()
+                                        .unwrap();
+                                    rt.block_on(async {
+                                        let client = reqwest::Client::new();
+                                        let token = state.token.unwrap_or_default();
+                                        let body = serde_json::json!({
+                                            "content": content,
+                                            "item_type": item_type,
+                                            "device_id": state.device_id.unwrap_or(0),
+                                        });
+                                        match client
+                                            .post(format!("{}/sync", state.api_url))
+                                            .header("Authorization", format!("Bearer {}", token))
+                                            .json(&body)
+                                            .send()
+                                            .await
+                                        {
+                                            Ok(_) => log::info!("Clipboard synced: {} chars", content.len()),
+                                            Err(e) => log::warn!("Sync push hatası: {}", e),
+                                        }
+                                    });
+                                });
+                            }
                         }
                     }
                 }

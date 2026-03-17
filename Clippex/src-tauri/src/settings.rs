@@ -11,7 +11,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            shortcut: "ctrl+alt+v".to_string(),
+            shortcut: "shift+alt+c".to_string(),
             autostart: false,
         }
     }

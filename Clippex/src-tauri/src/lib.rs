@@ -3,6 +3,7 @@ mod commands;
 mod database;
 mod models;
 mod settings;
+mod sync;
 
 use commands::DbState;
 use database::Database;
@@ -55,6 +56,10 @@ pub fn run() {
             // State olarak kaydet (Tauri commands için)
             app.manage(DbState(db.clone()));
             app.manage(commands::SettingsState(settings.clone()));
+
+            // Sync manager
+            let sync_manager = sync::SyncManager::new();
+            app.manage(sync_manager);
 
             // Clipboard watcher başlat
             clipboard::start_clipboard_watcher(app.handle().clone(), db);
@@ -115,6 +120,9 @@ pub fn run() {
             commands::get_settings,
             commands::update_shortcut,
             commands::toggle_autostart,
+            commands::sync_login,
+            commands::sync_logout,
+            commands::sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("Uygulama başlatılırken hata oluştu");
