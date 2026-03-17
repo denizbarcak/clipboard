@@ -214,6 +214,8 @@ function App() {
       setCardContextMenu(null);
       setContextMenu(null);
       setEditing(null);
+      loadItems();
+      loadCollections();
       // Sürükleme listener'larını temizle
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
