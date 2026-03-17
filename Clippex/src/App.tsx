@@ -356,7 +356,9 @@ function App() {
       await invoke("update_clipboard_content", {
         id: editing.item.id,
         content: editing.value,
+        oldContent: editing.item.content,
         isCollectionItem: !!activeCollection,
+        collectionId: activeCollection?.id || null,
       });
       setEditing(null);
       loadItems();

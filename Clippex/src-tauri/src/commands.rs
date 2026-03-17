@@ -32,7 +32,9 @@ pub fn update_clipboard_content(
     sync: State<'_, crate::sync::SyncManager>,
     id: String,
     content: String,
+    old_content: Option<String>,
     is_collection_item: bool,
+    collection_id: Option<String>,
 ) -> Result<(), String> {
     let result = if is_collection_item {
         state.0.update_collection_item_content(&id, &content)
@@ -40,13 +42,23 @@ pub fn update_clipboard_content(
         state.0.update_item_content(&id, &content)
     };
 
-    // Sync: düzenlemeyi sunucuya bildir (full sync ile güncellenecek)
     if result.is_ok() {
-        sync.send_or_queue("edit_item", serde_json::json!({
-            "id": id,
-            "content": content,
-            "is_collection_item": is_collection_item,
-        }));
+        if let Some(old) = old_content {
+            if is_collection_item {
+                if let Some(col_id) = collection_id {
+                    sync.send_or_queue("edit_collection_item", serde_json::json!({
+                        "local_id": col_id,
+                        "old_content": old,
+                        "new_content": content,
+                    }));
+                }
+            } else {
+                sync.send_or_queue("edit_sync_item", serde_json::json!({
+                    "old_content": old,
+                    "new_content": content,
+                }));
+            }
+        }
     }
 
     result

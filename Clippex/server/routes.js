@@ -278,6 +278,35 @@ router.post("/collections/local/:localId/items", authMiddleware, (req, res) => {
   res.status(201).json({ item: { id: result.lastInsertRowid } });
 });
 
+// Update sync item content (ana pano düzenleme)
+router.put("/sync/item", authMiddleware, (req, res) => {
+  const { old_content, new_content } = req.body;
+  if (!old_content || !new_content) {
+    return res.status(400).json({ error: "old_content ve new_content gerekli" });
+  }
+
+  db.prepare(
+    "UPDATE sync_items SET content = ? WHERE user_id = ? AND content = ?"
+  ).run(new_content, req.user.id, old_content);
+
+  res.json({ message: "Güncellendi" });
+});
+
+// Update collection item content (koleksiyon düzenleme)
+router.put("/collections/local/:localId/items", authMiddleware, (req, res) => {
+  const { old_content, new_content } = req.body;
+  const col = db.prepare(
+    "SELECT id FROM collections WHERE local_id = ? AND user_id = ?"
+  ).get(req.params.localId, req.user.id);
+
+  if (col && old_content && new_content) {
+    db.prepare(
+      "UPDATE collection_items SET content = ? WHERE collection_id = ? AND content = ?"
+    ).run(new_content, col.id, old_content);
+  }
+  res.json({ message: "Güncellendi" });
+});
+
 // Delete collection by local_id
 router.delete("/collections/local/:localId", authMiddleware, (req, res) => {
   const col = db.prepare(

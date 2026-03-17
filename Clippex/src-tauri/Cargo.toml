@@ -45,3 +45,6 @@ tokio = { version = "1", features = ["sync"] }
 
 # HTTP client for sync
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Directories
+dirs = "6"

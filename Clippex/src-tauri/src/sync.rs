@@ -238,16 +238,20 @@ impl SyncManager {
                             .send()
                             .await
                     }
-                    "edit_item" => {
-                        // Düzenleme full sync ile güncellenecek, şimdilik push
+                    "edit_sync_item" => {
                         client
-                            .post(format!("{}/sync", state.api_url))
+                            .put(format!("{}/sync/item", state.api_url))
                             .header("Authorization", &auth)
-                            .json(&serde_json::json!({
-                                "content": payload_clone["content"],
-                                "item_type": "text",
-                                "device_id": state.device_id.unwrap_or(0),
-                            }))
+                            .json(&payload_clone)
+                            .send()
+                            .await
+                    }
+                    "edit_collection_item" => {
+                        let local_id = payload_clone["local_id"].as_str().unwrap_or("");
+                        client
+                            .put(format!("{}/collections/local/{}/items", state.api_url, local_id))
+                            .header("Authorization", &auth)
+                            .json(&payload_clone)
                             .send()
                             .await
                     }
@@ -263,8 +267,23 @@ impl SyncManager {
                         }
                     }
                     Err(e) => {
-                        log::warn!("Sync {} hatası (kuyruğa alındı): {}", action, e);
-                        // TODO: offline queue'ya ekle
+                        log::warn!("Sync {} hatası, kuyruğa alındı: {}", action, e);
+                        // Offline queue'ya kaydet
+                        let queue_item = serde_json::json!({
+                            "action": action,
+                            "payload": payload_clone,
+                        });
+                        let queue_dir = dirs::data_local_dir()
+                            .unwrap_or_default()
+                            .join("clippex");
+                        let _ = std::fs::create_dir_all(&queue_dir);
+                        let queue_file = queue_dir.join("offline_queue.json");
+                        let mut queue: Vec<serde_json::Value> = std::fs::read_to_string(&queue_file)
+                            .ok()
+                            .and_then(|s| serde_json::from_str(&s).ok())
+                            .unwrap_or_default();
+                        queue.push(queue_item);
+                        let _ = std::fs::write(&queue_file, serde_json::to_string(&queue).unwrap_or_default());
                     }
                 }
             });
