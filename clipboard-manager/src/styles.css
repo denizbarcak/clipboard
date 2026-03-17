@@ -5,7 +5,7 @@
 }
 
 :root {
-  --glass-bg: rgba(25, 25, 40, 0.65);
+  --glass-bg: rgba(70, 70, 75, 0.8);
   --glass-card: rgba(255, 255, 255, 0.06);
   --glass-card-hover: rgba(255, 255, 255, 0.12);
   --glass-border: rgba(255, 255, 255, 0.1);
