@@ -221,6 +221,8 @@ function App() {
       setCardContextMenu(null);
       setContextMenu(null);
       setEditing(null);
+      // Pencere gösterildiğinde koleksiyonları yenile
+      setTimeout(() => loadCollections(), 100);
       // Sürükleme listener'larını temizle
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
