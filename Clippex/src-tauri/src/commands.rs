@@ -272,21 +272,31 @@ pub fn update_shortcut(
 
 #[tauri::command]
 pub fn toggle_autostart(
-    app: tauri::AppHandle,
     state: State<'_, SettingsState>,
     enabled: bool,
 ) -> Result<(), String> {
-    use tauri_plugin_autostart::AutoLaunchManager;
-    use tauri::Manager;
+    use winreg::RegKey;
+    use winreg::enums::*;
 
-    let autostart = app.state::<AutoLaunchManager>();
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_key = hkcu.open_subkey_with_flags(
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        KEY_SET_VALUE | KEY_READ,
+    ).map_err(|e| format!("Registry açılamadı: {}", e))?;
+
     if enabled {
-        autostart.enable().map_err(|e| format!("Autostart etkinleştirilemedi: {}", e))?;
+        // Kurulu exe yolunu bul
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Exe yolu alınamadı: {}", e))?;
+        run_key.set_value("Clippex", &exe_path.to_string_lossy().to_string())
+            .map_err(|e| format!("Registry yazılamadı: {}", e))?;
+        log::info!("Autostart etkinleştirildi: {}", exe_path.display());
     } else {
-        autostart.disable().map_err(|e| format!("Autostart devre dışı bırakılamadı: {}", e))?;
+        let _ = run_key.delete_value("Clippex");
+        log::info!("Autostart devre dışı bırakıldı");
     }
+
     state.0.set_autostart(enabled)?;
-    log::info!("Autostart: {}", enabled);
     Ok(())
 }
 

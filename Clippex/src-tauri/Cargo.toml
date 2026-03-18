@@ -28,6 +28,9 @@ tauri-plugin-single-instance = "2"
 # Clipboard access
 arboard = "3"
 
+# Windows registry
+winreg = "0.55"
+
 # SQLite database
 rusqlite = { version = "0.31", features = ["bundled"] }
 
