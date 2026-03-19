@@ -202,17 +202,14 @@ fn position_window(window: &tauri::WebviewWindow) {
         #[cfg(not(target_os = "macos"))]
         let y = screen_pos.y + screen_size.height as i32 - panel_height;
 
-        // Windows: DPI geçişi için önce ortaya taşı, bekle, sonra pozisyonla
-        #[cfg(target_os = "windows")]
-        {
-            let _ = window.set_position(PhysicalPosition::new(
-                screen_pos.x + screen_size.width as i32 / 2,
-                screen_pos.y + screen_size.height as i32 / 2,
-            ));
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-
-        // Boyut ve pozisyon ayarla
+        // 1) Önce pencereyi hedef monitörün ortasına taşı (DPI geçişi için)
+        let _ = window.set_position(PhysicalPosition::new(
+            screen_pos.x + screen_size.width as i32 / 2,
+            screen_pos.y + screen_size.height as i32 / 2,
+        ));
+        // 2) Kısa bekle — DPI değişimi uygulansın
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // 3) Şimdi doğru boyut ve pozisyon
         let _ = window.set_size(tauri::PhysicalSize::new(panel_width as u32, panel_height as u32));
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
@@ -340,23 +337,10 @@ fn toggle_window(app: &tauri::AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
-            // macOS: Önceki uygulamayı arka planda kaydet (bloklamaz)
-            #[cfg(target_os = "macos")]
-            {
-                std::thread::spawn(|| {
-                    save_previous_foreground_window();
-                });
-            }
-            // Windows: Senkron kaydet (hızlı API çağrısı)
-            #[cfg(not(target_os = "macos"))]
-            {
-                save_previous_foreground_window();
-            }
-
+            // Panel açılmadan önce aktif pencereyi kaydet
+            save_previous_foreground_window();
             let _ = window.hide();
             position_window(&window);
-            // Windows: Pozisyonlama sonrası kısa bekleme
-            #[cfg(not(target_os = "macos"))]
             std::thread::sleep(std::time::Duration::from_millis(10));
             let _ = window.show();
             let _ = window.set_focus();
@@ -520,10 +504,12 @@ pub fn restore_and_paste() {
         let app_name = PREVIOUS_APP.lock().ok().and_then(|p| p.clone());
 
         if let Some(app) = app_name {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
             // Önceki uygulamayı öne getir ve Cmd+V gönder
             let script = format!(
                 r#"tell application "{}" to activate
-delay 0.05
+delay 0.15
 tell application "System Events" to keystroke "v" using command down"#,
                 app
             );

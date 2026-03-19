@@ -1,0 +1,56 @@
+[package]
+name = "clippex"
+version = "0.2.0"
+description = "Clippex - Cross-device clipboard manager"
+authors = ["deniz"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.10.3", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-log = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+
+# Clipboard access
+arboard = "3"
+
+# SQLite database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Unique IDs
+uuid = { version = "1", features = ["v4"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Image handling (for clipboard images)
+base64 = "0.22"
+
+# Background tasks
+tokio = { version = "1", features = ["sync"] }
+
+# HTTP client for sync
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Directories
+dirs = "6"
+
+# macOS: Ekstra bağımlılık yok — CoreGraphics ve AppleScript doğrudan FFI/osascript ile kullanılıyor
+
+# Windows: Registry erişimi için
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.55"
