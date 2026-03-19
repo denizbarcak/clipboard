@@ -66,10 +66,20 @@ export default function Settings() {
     }
   };
 
+  const [saveError, setSaveError] = useState("");
+
   const handleSave = async () => {
     try {
+      setSaveError("");
       if (shortcut !== originalRef.current.shortcut) {
-        await invoke("update_shortcut", { shortcut: shortcut.toLowerCase() });
+        // Tauri kısayol formatı: modifier'lar lowercase, tuş büyük harf
+        const formatted = shortcut
+          .split("+")
+          .map((part, i, arr) =>
+            i === arr.length - 1 ? part.toUpperCase() : part.toLowerCase()
+          )
+          .join("+");
+        await invoke("update_shortcut", { shortcut: formatted });
       }
       if (autoStart !== originalRef.current.autoStart) {
         await invoke("toggle_autostart", { enabled: autoStart });
@@ -78,8 +88,9 @@ export default function Settings() {
       setHasChanges(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Kaydetme hatası:", err);
+      setSaveError(typeof err === "string" ? err : err?.message || "Kaydetme başarısız");
     }
   };
 
@@ -202,6 +213,7 @@ export default function Settings() {
             >
               {saved ? "Kaydedildi" : "Kaydet"}
             </button>
+            {saveError && <div className="auth-error">{saveError}</div>}
           </div>
         )}
 

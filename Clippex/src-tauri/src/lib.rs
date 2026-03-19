@@ -33,6 +33,12 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin({
+            #[cfg(target_os = "macos")]
+            { tauri_nspanel::init() }
+            #[cfg(not(target_os = "macos"))]
+            { tauri::plugin::Builder::new("nspanel-noop").build() }
+        })
         .setup(|app| {
             // macOS: Dock'ta gösterme — sadece system tray'de çalış
             #[cfg(target_os = "macos")]
@@ -96,6 +102,26 @@ pub fn run() {
 
                 // Platform'a göre blur efekti
                 apply_window_effects(&window);
+
+                // macOS: Pencereyi NSPanel'e çevir — Dock üzerinde görünür
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri_nspanel::WebviewWindowExt;
+
+                    tauri_nspanel::tauri_panel! {
+                        panel!(ClippexPanel {
+                            config: {
+                                can_become_key_window: true,
+                                is_floating_panel: true
+                            }
+                        })
+                    }
+
+                    if let Ok(panel) = window.to_panel::<ClippexPanel>() {
+                        panel.set_level(tauri_nspanel::PanelLevel::Status.into());
+                        log::info!("macOS: Pencere NSPanel'e çevrildi (Dock üzerinde)");
+                    }
+                }
 
                 // Focus kaybedince pencereyi gizle (sürükleme sırasında değilse)
                 let w = window.clone();
@@ -193,11 +219,10 @@ fn position_window(window: &tauri::WebviewWindow) {
 
         let x = screen_pos.x;
 
-        // macOS: Dock'un hemen üstüne yapıştır
+        // macOS: Ekranın en altına yapıştır
         #[cfg(target_os = "macos")]
         let y = {
-            let dock_offset = 5;
-            screen_pos.y + screen_size.height as i32 - panel_height - dock_offset
+            screen_pos.y + screen_size.height as i32 - panel_height
         };
         #[cfg(not(target_os = "macos"))]
         let y = screen_pos.y + screen_size.height as i32 - panel_height;
@@ -276,11 +301,37 @@ fn force_topmost(window: &tauri::WebviewWindow) {
         }
     }
 
-    // macOS: Tauri'nin always_on_top özelliği yeterli
+    // macOS: NSPanel zaten Dock üzerinde (setup'ta ayarlandı)
     #[cfg(target_os = "macos")]
     {
         let _ = window.set_always_on_top(true);
     }
+}
+
+// ===== macOS Dock Yüksekliği =====
+
+#[cfg(target_os = "macos")]
+fn get_macos_dock_height(screen_physical_height: u32, scale_factor: f64) -> i32 {
+    // AppleScript ile Finder desktop bounds alarak visible area hesapla
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"Finder\" to get bounds of window of desktop")
+        .output();
+
+    if let Ok(output) = output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Çıktı: "0, 0, 1710, 1112" formatında — son değer visible height (logical)
+        let parts: Vec<&str> = stdout.trim().split(", ").collect();
+        if parts.len() == 4 {
+            if let (Ok(menu_y), Ok(visible_bottom)) = (parts[1].parse::<f64>(), parts[3].parse::<f64>()) {
+                let logical_screen_height = screen_physical_height as f64 / scale_factor;
+                let dock_height = logical_screen_height - visible_bottom;
+                return (dock_height * scale_factor) as i32;
+            }
+        }
+    }
+    // Fallback: tipik Dock yüksekliği
+    (70.0 * scale_factor) as i32
 }
 
 // ===== Cursor Pozisyonu =====
