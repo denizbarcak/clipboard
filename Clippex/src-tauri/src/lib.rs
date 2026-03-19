@@ -92,21 +92,39 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 position_window(&window);
 
-                // Platform'a göre blur efekti
-                apply_window_effects(&window);
-
-                // macOS: Pencere level'ını Dock üzerine çıkar
+                // macOS: Önce dark appearance zorla, sonra efekt uygula
                 #[cfg(target_os = "macos")]
                 {
                     set_macos_window_level(&window);
                 }
 
-                // Focus kaybedince pencereyi gizle (sürükleme sırasında değilse)
+                // Platform'a göre blur efekti
+                apply_window_effects(&window);
+
+                // Focus kaybedince pencereyi gizle (sürükleme/yapıştırma sırasında değilse)
+                // macOS'ta kısa delay ile kontrol et — search input focus geçişlerini yakala
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        if !IS_DRAGGING.load(Ordering::SeqCst) {
-                            let _ = w.hide();
+                        if !IS_DRAGGING.load(Ordering::SeqCst) && !IS_PASTING.load(Ordering::SeqCst) {
+                            #[cfg(target_os = "macos")]
+                            {
+                                let w2 = w.clone();
+                                std::thread::spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    if !IS_DRAGGING.load(Ordering::SeqCst) && !IS_PASTING.load(Ordering::SeqCst) {
+                                        if let Ok(focused) = w2.is_focused() {
+                                            if !focused {
+                                                let _ = w2.hide();
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            #[cfg(not(target_os = "macos"))]
+                            {
+                                let _ = w.hide();
+                            }
                         }
                     }
                 });
@@ -289,15 +307,15 @@ fn force_topmost(window: &tauri::WebviewWindow) {
 
 #[cfg(target_os = "macos")]
 fn set_macos_window_level(window: &tauri::WebviewWindow) {
-    use tauri::Listener;
     // NSWindow setLevel: ile pencereyi Dock üzerine çıkar
-    // Dock level = 20, biz 24 (floating) veya 25 kullanıyoruz
+    // Dock level = 20, biz 25 kullanıyoruz
     let ns_window = window.ns_window();
     if let Ok(ns_win) = ns_window {
         unsafe {
+            let ns_win_ptr = ns_win as *mut std::ffi::c_void;
             let sel = sel_register_name(b"setLevel:\0");
             let f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, i64) = std::mem::transmute(objc_msg_send_fn() as *const ());
-            f(ns_win as *mut std::ffi::c_void, sel, 25); // 25 = kCGScreenSaverWindowLevel üzeri
+            f(ns_win_ptr, sel, 25);
         }
         log::info!("macOS: Pencere level 25 ayarlandı (Dock üzerinde)");
     }

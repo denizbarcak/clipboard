@@ -31,6 +31,7 @@ html, body, #root {
   color: var(--text-primary);
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
 }
 
 /* ===== macOS: SF Pro font + glassmorphism override ===== */
@@ -46,18 +47,81 @@ body.platform-macos {
   --glass-border-hover: rgba(255, 255, 255, 0.20);
 }
 
+/* macOS light mode: siyah yazılar */
 @media (prefers-color-scheme: light) {
   body.platform-macos {
-    --glass-card: rgba(0, 0, 0, 0.04);
-    --glass-card-hover: rgba(0, 0, 0, 0.08);
-    --glass-border: rgba(0, 0, 0, 0.08);
-    --glass-border-hover: rgba(0, 0, 0, 0.15);
-    --bg: transparent;
-    --text: #1a1a1a;
-    --text-secondary: rgba(0, 0, 0, 0.55);
-    --accent: #6c5ce7;
-    --accent-light: #7c6cf7;
-    --border: rgba(0, 0, 0, 0.08);
+    --text-primary: #1a1a1a;
+    --text-secondary: rgba(0, 0, 0, 0.6);
+    --text-tertiary: rgba(0, 0, 0, 0.4);
+    color: #1a1a1a;
+  }
+
+  /* Koleksiyona eklenmemiş kartlar: koyu arka plan, siyah border */
+  body.platform-macos .clip-card {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1.5px solid rgba(0, 0, 0, 0.25);
+    color: #1a1a1a;
+  }
+
+  body.platform-macos .clip-card:hover {
+    background: rgba(0, 0, 0, 0.22);
+    border-color: rgba(0, 0, 0, 0.4);
+  }
+
+  /* Koleksiyondaki kartlar: kalın renkli border */
+  body.platform-macos .clip-card.in-collection {
+    border: 2.5px solid var(--collection-color);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--collection-color) 40%, transparent);
+  }
+
+  body.platform-macos .clip-card.in-collection:hover {
+    border: 2.5px solid var(--collection-color);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--collection-color) 50%, transparent);
+  }
+
+  body.platform-macos .clip-card .clip-text {
+    color: #1a1a1a;
+  }
+
+  body.platform-macos .clip-meta,
+  body.platform-macos .clip-type,
+  body.platform-macos .clip-card .clip-meta {
+    color: rgba(0, 0, 0, 0.55);
+  }
+
+  body.platform-macos .collection-pill {
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  body.platform-macos .icon-btn {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  body.platform-macos .icon-btn:hover {
+    color: #1a1a1a;
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  body.platform-macos .toolbar .tab-btn {
+    color: rgba(0, 0, 0, 0.55);
+  }
+
+  body.platform-macos .toolbar .tab-btn.active {
+    color: #1a1a1a;
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  body.platform-macos .add-collection-btn {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  body.platform-macos .search-input {
+    color: #1a1a1a;
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+
+  body.platform-macos .search-input::placeholder {
+    color: rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -1554,80 +1618,4 @@ body.platform-macos .card-filepath {
 }
 
 /* ===== macOS Light Mode ===== */
-@media (prefers-color-scheme: light) {
-  body.platform-macos .app-container {
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
-  }
-
-  body.platform-macos .clip-card {
-    background: rgba(255, 255, 255, 0.45);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    color: #1a1a1a;
-  }
-
-  body.platform-macos .clip-card:hover {
-    background: rgba(255, 255, 255, 0.65);
-    border-color: rgba(0, 0, 0, 0.12);
-  }
-
-  body.platform-macos .clip-card .clip-text {
-    color: #1a1a1a;
-  }
-
-  body.platform-macos .clip-card .clip-meta,
-  body.platform-macos .clip-card .clip-type {
-    color: rgba(0, 0, 0, 0.5);
-  }
-
-  body.platform-macos .toolbar {
-    background: transparent;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  }
-
-  body.platform-macos .toolbar .tab-btn {
-    color: rgba(0, 0, 0, 0.5);
-  }
-
-  body.platform-macos .toolbar .tab-btn.active {
-    color: #1a1a1a;
-    background: rgba(0, 0, 0, 0.06);
-  }
-
-  body.platform-macos .search-input {
-    background: rgba(0, 0, 0, 0.04);
-    color: #1a1a1a;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-  }
-
-  body.platform-macos .search-input::placeholder {
-    color: rgba(0, 0, 0, 0.35);
-  }
-
-  body.platform-macos .context-menu,
-  body.platform-macos .card-context-menu {
-    background: rgba(255, 255, 255, 0.80);
-    backdrop-filter: blur(50px) saturate(180%);
-    -webkit-backdrop-filter: blur(50px) saturate(180%);
-    border: 1px solid rgba(0, 0, 0, 0.10);
-    color: #1a1a1a;
-  }
-
-  body.platform-macos .context-menu button:hover,
-  body.platform-macos .card-context-menu button:hover {
-    background: rgba(0, 0, 0, 0.06);
-  }
-
-  body.platform-macos .icon-btn {
-    color: rgba(0, 0, 0, 0.5);
-  }
-
-  body.platform-macos .icon-btn:hover {
-    background: rgba(0, 0, 0, 0.06);
-    color: #1a1a1a;
-  }
-
-  body.platform-macos .collection-pill {
-    background: rgba(0, 0, 0, 0.05);
-    color: rgba(0, 0, 0, 0.6);
-  }
-}
+/* Light mode: macOS'ta da dark tema kullanılıyor — ayrı stil yok */
