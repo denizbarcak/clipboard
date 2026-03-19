@@ -70,6 +70,12 @@ const COLLECTION_COLORS = [
 ];
 
 function App() {
+  // macOS platform tespiti — body'ye class ekle
+  useEffect(() => {
+    const isMac = navigator.userAgent.includes("Mac");
+    if (isMac) document.body.classList.add("platform-macos");
+  }, []);
+
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [activeCollection, setActiveCollectionRaw] = useState<string | null>(

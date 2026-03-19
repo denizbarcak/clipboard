@@ -11,7 +11,11 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            shortcut: "shift+alt+c".to_string(),
+            shortcut: if cfg!(target_os = "macos") {
+                "shift+super+v".to_string()
+            } else {
+                "shift+alt+c".to_string()
+            },
             autostart: false,
         }
     }

@@ -272,28 +272,44 @@ pub fn update_shortcut(
 
 #[tauri::command]
 pub fn toggle_autostart(
+    app: tauri::AppHandle,
     state: State<'_, SettingsState>,
     enabled: bool,
 ) -> Result<(), String> {
-    use winreg::RegKey;
-    use winreg::enums::*;
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::RegKey;
+        use winreg::enums::*;
 
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let run_key = hkcu.open_subkey_with_flags(
-        r"Software\Microsoft\Windows\CurrentVersion\Run",
-        KEY_SET_VALUE | KEY_READ,
-    ).map_err(|e| format!("Registry açılamadı: {}", e))?;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let run_key = hkcu.open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_SET_VALUE | KEY_READ,
+        ).map_err(|e| format!("Registry açılamadı: {}", e))?;
 
-    if enabled {
-        // Kurulu exe yolunu bul
-        let exe_path = std::env::current_exe()
-            .map_err(|e| format!("Exe yolu alınamadı: {}", e))?;
-        run_key.set_value("Clippex", &exe_path.to_string_lossy().to_string())
-            .map_err(|e| format!("Registry yazılamadı: {}", e))?;
-        log::info!("Autostart etkinleştirildi: {}", exe_path.display());
-    } else {
-        let _ = run_key.delete_value("Clippex");
-        log::info!("Autostart devre dışı bırakıldı");
+        if enabled {
+            let exe_path = std::env::current_exe()
+                .map_err(|e| format!("Exe yolu alınamadı: {}", e))?;
+            run_key.set_value("Clippex", &exe_path.to_string_lossy().to_string())
+                .map_err(|e| format!("Registry yazılamadı: {}", e))?;
+            log::info!("Autostart etkinleştirildi: {}", exe_path.display());
+        } else {
+            let _ = run_key.delete_value("Clippex");
+            log::info!("Autostart devre dışı bırakıldı");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let autostart = app.autolaunch();
+        if enabled {
+            autostart.enable().map_err(|e| format!("Autostart etkinleştirilemedi: {}", e))?;
+            log::info!("macOS: Autostart etkinleştirildi (LaunchAgent)");
+        } else {
+            autostart.disable().map_err(|e| format!("Autostart devre dışı bırakılamadı: {}", e))?;
+            log::info!("macOS: Autostart devre dışı bırakıldı");
+        }
     }
 
     state.0.set_autostart(enabled)?;
@@ -347,7 +363,11 @@ pub async fn sync_login(
     sync.set_auth(token.clone(), email.clone(), None);
 
     // Register device
-    let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
+    let hostname = if cfg!(target_os = "macos") {
+        std::env::var("USER").unwrap_or_else(|_| "Mac".to_string()) + "'s Mac"
+    } else {
+        std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string())
+    };
     match sync.register_device(&hostname).await {
         Ok(device_id) => {
             log::info!("Sync giriş yapıldı: {} (device: {})", email, device_id);

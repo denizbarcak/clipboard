@@ -12,8 +12,11 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-/// Panel açılmadan önce aktif olan pencere handle'ı
+/// Panel açılmadan önce aktif olan pencere handle'ı (Windows)
 static PREVIOUS_WINDOW: AtomicIsize = AtomicIsize::new(0);
+/// macOS: Önceki aktif uygulamanın adı
+#[cfg(target_os = "macos")]
+static PREVIOUS_APP: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 /// Sürükleme sırasında pencere kapanmasını engelle
 pub static IS_DRAGGING: AtomicBool = AtomicBool::new(false);
 pub static IS_PASTING: AtomicBool = AtomicBool::new(false);
@@ -31,6 +34,28 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
+            // macOS: Dock'ta gösterme — sadece system tray'de çalış
+            #[cfg(target_os = "macos")]
+            {
+                extern "C" {
+                    fn objc_getClass(name: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+                    fn sel_registerName(name: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+                    fn objc_msgSend(obj: *mut std::ffi::c_void, sel: *mut std::ffi::c_void, ...) -> *mut std::ffi::c_void;
+                }
+                unsafe {
+                    let cls = objc_getClass(b"NSApplication\0".as_ptr() as *const _);
+                    let shared = sel_registerName(b"sharedApplication\0".as_ptr() as *const _);
+                    let app = objc_msgSend(cls, shared);
+                    let set_policy = sel_registerName(b"setActivationPolicy:\0".as_ptr() as *const _);
+                    // NSApplicationActivationPolicyAccessory = 1
+                    let _: *mut std::ffi::c_void = {
+                        let f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, i64) -> *mut std::ffi::c_void = std::mem::transmute(objc_msgSend as *const ());
+                        f(app, set_policy, 1)
+                    };
+                }
+                log::info!("macOS: Dock'ta gizlendi (Accessory mode)");
+            }
+
             // Logger (debug modda)
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -65,16 +90,12 @@ pub fn run() {
             // Clipboard watcher başlat
             clipboard::start_clipboard_watcher(app.handle().clone(), db);
 
-            // Pencereyi görev çubuğunun hemen üstüne konumlandır
+            // Pencereyi konumlandır
             if let Some(window) = app.get_webview_window("main") {
-                position_window_above_taskbar(&window);
+                position_window(&window);
 
-                // Acrylic/Mica blur efekti (Windows 10/11)
-                use tauri::window::Effect;
-                let _ = window.set_effects(tauri::utils::config::WindowEffectsConfig {
-                    effects: vec![Effect::Acrylic],
-                    ..Default::default()
-                });
+                // Platform'a göre blur efekti
+                apply_window_effects(&window);
 
                 // Focus kaybedince pencereyi gizle (sürükleme sırasında değilse)
                 let w = window.clone();
@@ -130,11 +151,12 @@ pub fn run() {
         .expect("Uygulama başlatılırken hata oluştu");
 }
 
-/// Pencereyi cursor'un bulunduğu monitörün altına yapıştır
-fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
+// ===== Pencere Konumlandırma =====
+
+/// Pencereyi ekranın altına konumlandır (platform bağımsız)
+fn position_window(window: &tauri::WebviewWindow) {
     use tauri::PhysicalPosition;
 
-    // Cursor hangi monitörde?
     let cursor_pos = get_cursor_position();
     let target_monitor = if let Ok(monitors) = window.available_monitors() {
         monitors.into_iter().find(|m| {
@@ -149,7 +171,6 @@ fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
         None
     };
 
-    // Bulunamazsa primary monitor'ü kullan
     let monitor = target_monitor.or_else(|| window.primary_monitor().ok().flatten());
 
     if let Some(monitor) = monitor {
@@ -157,13 +178,28 @@ fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
         let screen_pos = monitor.position();
 
         let panel_width = screen_size.width as i32;
-        // Küçük ekranlarda biraz daha yüksek, büyük ekranlarda daha düşük
+
+        // macOS: Biraz daha yüksek panel
+        #[cfg(target_os = "macos")]
+        let ratio = if screen_size.height <= 1080 { 0.26 }
+            else if screen_size.height <= 1920 { 0.28 }
+            else { 0.26 };
+        #[cfg(not(target_os = "macos"))]
         let ratio = if screen_size.height <= 1080 { 0.22 }
             else if screen_size.height <= 1920 { 0.25 }
             else { 0.22 };
+
         let panel_height = (screen_size.height as f64 * ratio) as i32;
 
         let x = screen_pos.x;
+
+        // macOS: Dock'un hemen üstüne yapıştır
+        #[cfg(target_os = "macos")]
+        let y = {
+            let dock_offset = 5;
+            screen_pos.y + screen_size.height as i32 - panel_height - dock_offset
+        };
+        #[cfg(not(target_os = "macos"))]
         let y = screen_pos.y + screen_size.height as i32 - panel_height;
 
         // 1) Önce pencereyi hedef monitörün ortasına taşı (DPI geçişi için)
@@ -178,6 +214,31 @@ fn position_window_above_taskbar(window: &tauri::WebviewWindow) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 }
+
+/// Platform'a göre pencere blur efekti uygula
+fn apply_window_effects(window: &tauri::WebviewWindow) {
+    use tauri::window::{Effect, EffectState};
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = window.set_effects(tauri::utils::config::WindowEffectsConfig {
+            effects: vec![Effect::Acrylic],
+            ..Default::default()
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_effects(tauri::utils::config::WindowEffectsConfig {
+            effects: vec![Effect::HudWindow],
+            state: Some(EffectState::Active),
+            radius: Some(12.0),
+            ..Default::default()
+        });
+    }
+}
+
+// ===== Pencere Üste Zorlama =====
 
 /// Windows API: Pencereyi en üste zorla (Start menüsünün bile üstüne)
 fn force_topmost(window: &tauri::WebviewWindow) {
@@ -211,9 +272,17 @@ fn force_topmost(window: &tauri::WebviewWindow) {
             }
         }
     }
+
+    // macOS: Tauri'nin always_on_top özelliği yeterli
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_always_on_top(true);
+    }
 }
 
-/// Windows API: Cursor pozisyonunu al
+// ===== Cursor Pozisyonu =====
+
+/// Cursor pozisyonunu al (platform bağımsız)
 fn get_cursor_position() -> (i32, i32) {
     #[cfg(target_os = "windows")]
     {
@@ -229,9 +298,38 @@ fn get_cursor_position() -> (i32, i32) {
         unsafe { GetCursorPos(&mut point) };
         return (point.x, point.y);
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: CoreGraphics ile mouse pozisyonu al
+        extern "C" {
+            fn CGEventCreate(source: *const std::ffi::c_void) -> *const std::ffi::c_void;
+            fn CGEventGetLocation(event: *const std::ffi::c_void) -> CGPoint;
+            fn CFRelease(cf: *const std::ffi::c_void);
+        }
+
+        #[repr(C)]
+        struct CGPoint {
+            x: f64,
+            y: f64,
+        }
+
+        unsafe {
+            let event = CGEventCreate(std::ptr::null());
+            if !event.is_null() {
+                let point = CGEventGetLocation(event);
+                CFRelease(event);
+                return (point.x as i32, point.y as i32);
+            }
+        }
+        return (0, 0);
+    }
+
     #[allow(unreachable_code)]
     (0, 0)
 }
+
+// ===== Pencere Toggle =====
 
 /// Pencereyi göster/gizle toggle
 fn toggle_window(app: &tauri::AppHandle) {
@@ -242,13 +340,12 @@ fn toggle_window(app: &tauri::AppHandle) {
             // Panel açılmadan önce aktif pencereyi kaydet
             save_previous_foreground_window();
             let _ = window.hide();
-            position_window_above_taskbar(&window);
+            position_window(&window);
             std::thread::sleep(std::time::Duration::from_millis(10));
             let _ = window.show();
             let _ = window.set_focus();
-            // Windows API ile en üste zorla
             force_topmost(&window);
-            // Start menüsü kapanması için bekle ve tekrar üste zorla
+            // Kısa bekle ve tekrar üste zorla (Windows Start menüsü vb. için)
             let w = window.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(150));
@@ -260,7 +357,9 @@ fn toggle_window(app: &tauri::AppHandle) {
     }
 }
 
-/// Aktif pencereyi kaydet (Windows API)
+// ===== Önceki Pencere Yönetimi =====
+
+/// Aktif pencereyi kaydet
 fn save_previous_foreground_window() {
     #[cfg(target_os = "windows")]
     {
@@ -271,9 +370,28 @@ fn save_previous_foreground_window() {
         PREVIOUS_WINDOW.store(hwnd, Ordering::SeqCst);
         log::info!("Önceki pencere kaydedildi: {}", hwnd);
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: Önceki aktif uygulamanın adını AppleScript ile al
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(r#"tell application "System Events" to get name of first application process whose frontmost is true"#)
+            .output();
+
+        if let Ok(o) = output {
+            if o.status.success() {
+                let app_name = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                log::info!("macOS: Önceki uygulama kaydedildi: {}", app_name);
+                if let Ok(mut prev) = PREVIOUS_APP.lock() {
+                    *prev = Some(app_name);
+                }
+            }
+        }
+    }
 }
 
-/// Önceki pencereye focus ver ve Ctrl+V simüle et
+/// Önceki pencereye focus ver ve yapıştır (Ctrl+V / Cmd+V)
 pub fn restore_and_paste() {
     #[cfg(target_os = "windows")]
     {
@@ -379,6 +497,43 @@ pub fn restore_and_paste() {
 
         log::info!("Ctrl+V simüle edildi, {} input gönderildi", sent);
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: Önceki uygulamaya dön ve Cmd+V simüle et
+        let app_name = PREVIOUS_APP.lock().ok().and_then(|p| p.clone());
+
+        if let Some(app) = app_name {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
+            // Önceki uygulamayı öne getir ve Cmd+V gönder
+            let script = format!(
+                r#"tell application "{}" to activate
+delay 0.15
+tell application "System Events" to keystroke "v" using command down"#,
+                app
+            );
+
+            let output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output();
+
+            match output {
+                Ok(o) if o.status.success() => {
+                    log::info!("macOS: {} uygulamasına Cmd+V gönderildi", app);
+                }
+                Ok(o) => {
+                    log::warn!("macOS: AppleScript hatası: {}", String::from_utf8_lossy(&o.stderr));
+                }
+                Err(e) => {
+                    log::warn!("macOS: osascript çalıştırılamadı: {}", e);
+                }
+            }
+        } else {
+            log::warn!("macOS: Önceki uygulama bulunamadı");
+        }
+    }
 }
 
 /// Global kısayol kaydet
@@ -395,7 +550,7 @@ fn setup_global_shortcut(app: &tauri::App, shortcut_str: &str) -> Result<(), Box
             toggle_window(&handle);
         }
     }) {
-        Ok(_) => log::info!("Global kısayol kaydedildi: Ctrl+Shift+V"),
+        Ok(_) => log::info!("Global kısayol kaydedildi: {}", shortcut_str),
         Err(e) => log::warn!("Global kısayol kaydedilemedi: {}", e),
     }
 

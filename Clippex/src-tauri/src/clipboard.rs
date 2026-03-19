@@ -125,6 +125,17 @@ fn detect_content_type(text: &str) -> ClipboardItemType {
         return ClipboardItemType::FilePath;
     }
 
+    // Dosya yolu kontrolü (macOS / Linux)
+    if trimmed.starts_with("/Users/")
+        || trimmed.starts_with("/home/")
+        || trimmed.starts_with("/tmp/")
+        || trimmed.starts_with("/var/")
+        || trimmed.starts_with("/opt/")
+        || trimmed.starts_with("~/")
+    {
+        return ClipboardItemType::FilePath;
+    }
+
     ClipboardItemType::Text
 }
 
