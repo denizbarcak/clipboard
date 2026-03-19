@@ -33,12 +33,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
-        .plugin({
-            #[cfg(target_os = "macos")]
-            { tauri_nspanel::init() }
-            #[cfg(not(target_os = "macos"))]
-            { tauri::plugin::Builder::new("nspanel-noop").build() }
-        })
         .setup(|app| {
             // macOS: Dock'ta gösterme — sadece system tray'de çalış
             #[cfg(target_os = "macos")]
@@ -62,14 +56,12 @@ pub fn run() {
                 log::info!("macOS: Dock'ta gizlendi (Accessory mode)");
             }
 
-            // Logger (debug modda)
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // Logger (her zaman aktif — sorun tespiti için)
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
 
             // Veritabanı başlat
             let app_data_dir = app
@@ -103,24 +95,10 @@ pub fn run() {
                 // Platform'a göre blur efekti
                 apply_window_effects(&window);
 
-                // macOS: Pencereyi NSPanel'e çevir — Dock üzerinde görünür
+                // macOS: Pencere level'ını Dock üzerine çıkar
                 #[cfg(target_os = "macos")]
                 {
-                    use tauri_nspanel::WebviewWindowExt;
-
-                    tauri_nspanel::tauri_panel! {
-                        panel!(ClippexPanel {
-                            config: {
-                                can_become_key_window: true,
-                                is_floating_panel: true
-                            }
-                        })
-                    }
-
-                    if let Ok(panel) = window.to_panel::<ClippexPanel>() {
-                        panel.set_level(tauri_nspanel::PanelLevel::Status.into());
-                        log::info!("macOS: Pencere NSPanel'e çevrildi (Dock üzerinde)");
-                    }
+                    set_macos_window_level(&window);
                 }
 
                 // Focus kaybedince pencereyi gizle (sürükleme sırasında değilse)
@@ -301,11 +279,44 @@ fn force_topmost(window: &tauri::WebviewWindow) {
         }
     }
 
-    // macOS: NSPanel zaten Dock üzerinde (setup'ta ayarlandı)
     #[cfg(target_os = "macos")]
     {
-        let _ = window.set_always_on_top(true);
+        set_macos_window_level(window);
     }
+}
+
+// ===== macOS Pencere Level (Dock üzerinde) =====
+
+#[cfg(target_os = "macos")]
+fn set_macos_window_level(window: &tauri::WebviewWindow) {
+    use tauri::Listener;
+    // NSWindow setLevel: ile pencereyi Dock üzerine çıkar
+    // Dock level = 20, biz 24 (floating) veya 25 kullanıyoruz
+    let ns_window = window.ns_window();
+    if let Ok(ns_win) = ns_window {
+        unsafe {
+            let sel = sel_register_name(b"setLevel:\0");
+            let f: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, i64) = std::mem::transmute(objc_msg_send_fn() as *const ());
+            f(ns_win as *mut std::ffi::c_void, sel, 25); // 25 = kCGScreenSaverWindowLevel üzeri
+        }
+        log::info!("macOS: Pencere level 25 ayarlandı (Dock üzerinde)");
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn sel_register_name(name: &[u8]) -> *mut std::ffi::c_void {
+    extern "C" {
+        fn sel_registerName(name: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    }
+    sel_registerName(name.as_ptr() as *const _)
+}
+
+#[cfg(target_os = "macos")]
+fn objc_msg_send_fn() -> unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void, ...) -> *mut std::ffi::c_void {
+    extern "C" {
+        fn objc_msgSend(obj: *mut std::ffi::c_void, sel: *mut std::ffi::c_void, ...) -> *mut std::ffi::c_void;
+    }
+    objc_msgSend
 }
 
 // ===== macOS Dock Yüksekliği =====
@@ -391,12 +402,10 @@ fn toggle_window(app: &tauri::AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
-            // macOS: Önceki uygulamayı arka planda kaydet (bloklamaz)
+            // macOS: Önceki uygulamayı SENKRON kaydet (panel açılmadan önce!)
             #[cfg(target_os = "macos")]
             {
-                std::thread::spawn(|| {
-                    save_previous_foreground_window();
-                });
+                save_previous_foreground_window();
             }
             // Windows: Senkron kaydet (hızlı API çağrısı)
             #[cfg(not(target_os = "macos"))]

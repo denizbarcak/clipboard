@@ -855,7 +855,10 @@ function App() {
           onWheel={(e) => {
             if (cardsRef.current) {
               e.preventDefault();
-              cardsRef.current.scrollLeft += e.deltaY * 5;
+              // macOS trackpad yüksek delta verir, multiplier'ı düşük tut
+              const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+              const multiplier = isMac ? 1.5 : 5;
+              cardsRef.current.scrollLeft += e.deltaY * multiplier;
             }
           }}
         >

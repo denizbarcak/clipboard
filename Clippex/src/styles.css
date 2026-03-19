@@ -1028,7 +1028,8 @@ body.platform-macos .app-container {
   overflow-y: hidden;
   padding: 14px 20px;
   gap: 10px;
-  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: auto;
 }
 
 .cards-area::-webkit-scrollbar {
