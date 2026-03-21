@@ -83,6 +83,10 @@ body.platform-macos {
     color: #1a1a1a;
   }
 
+  body.platform-macos .clip-card .card-link {
+    color: #1a5bb5;
+  }
+
   body.platform-macos .clip-meta,
   body.platform-macos .clip-type,
   body.platform-macos .clip-card .clip-meta {
@@ -122,6 +126,86 @@ body.platform-macos {
 
   body.platform-macos .search-input::placeholder {
     color: rgba(0, 0, 0, 0.35);
+  }
+
+  /* Context menüler: dark mode yazılar (arka plan koyu olduğu için) */
+  body.platform-macos .context-menu,
+  body.platform-macos .card-context-menu,
+  body.platform-macos .ctx-submenu {
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(40, 40, 40, 0.75);
+    backdrop-filter: blur(50px) saturate(180%);
+    -webkit-backdrop-filter: blur(50px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
+
+  body.platform-macos .context-menu-item,
+  body.platform-macos .ctx-item {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  body.platform-macos .context-menu-item:hover,
+  body.platform-macos .ctx-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  body.platform-macos .context-menu-item.danger {
+    color: var(--delete-color);
+  }
+
+  body.platform-macos .context-menu-label {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  body.platform-macos .context-menu-divider {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  body.platform-macos .pill-name {
+    color: rgba(0, 0, 0, 0.6);
+  }
+
+  body.platform-macos .collection-pill.active .pill-name {
+    color: #fff;
+  }
+
+  /* Düzenleme modalı: beyaz yazılar (koyu arka plan) */
+  body.platform-macos .edit-modal {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  body.platform-macos .edit-title {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  body.platform-macos .edit-title-input {
+    color: rgba(255, 255, 255, 0.95);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  body.platform-macos .edit-title-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  body.platform-macos .edit-textarea {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  body.platform-macos .edit-textarea::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  body.platform-macos .edit-label {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  body.platform-macos .edit-btn.cancel {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  body.platform-macos .edit-btn.save {
+    color: #a29bfe;
   }
 }
 

@@ -413,6 +413,7 @@ function App() {
     e.preventDefault();
     e.stopPropagation();
     const card = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setContextMenu(null); // Koleksiyon menüsünü kapat
     setCardContextMenu({
       item,
       showCollections: false,
@@ -424,6 +425,7 @@ function App() {
   const handleContextMenu = (e: React.MouseEvent, col: Collection) => {
     e.preventDefault();
     e.stopPropagation();
+    setCardContextMenu(null); // Kart menüsünü kapat
     setContextMenu({ x: e.clientX, y: e.clientY, collection: col });
   };
 
